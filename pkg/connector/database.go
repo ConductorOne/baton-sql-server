@@ -115,7 +115,7 @@ func (d *databaseSyncer) List(ctx context.Context, parentResourceID *v2.Resource
 			dbModel.Name,
 			d.ResourceType(ctx),
 			dbModel.ID,
-			resource.WithAnnotation(&v2.ChildResourceType{ResourceTypeId: resourceTypeTable.Id}),
+			resource.WithAnnotation(&v2.ChildResourceType{ResourceTypeId: resourceTypeSchema.Id}),
 		)
 		if err != nil {
 			return nil, "", nil, err

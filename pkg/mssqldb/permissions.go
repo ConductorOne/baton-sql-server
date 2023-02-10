@@ -30,12 +30,66 @@ func (c *Client) ListServerPermissions(ctx context.Context, pager *Pager) ([]*Se
 	sb.WriteString(`SELECT
 principals.name as principal_name,
 perms.grantee_principal_id as principal_id,
-perms.state_desc as state,
+perms.state as state,
 STRING_AGG(perms.type, ',') as perms,
 principals.type as principal_type
 FROM sys.server_permissions perms
          JOIN sys.server_principals principals ON perms.grantee_principal_id = principals.principal_id
-GROUP BY perms.grantee_principal_id, perms.state_desc, principals.name, principals.type
+WHERE perms.state = 'G' OR perms.state = 'W'
+GROUP BY perms.grantee_principal_id, perms.state, principals.name, principals.type
+ORDER BY perms.grantee_principal_id ASC
+OFFSET @p1 ROWS FETCH NEXT @p2 ROWS ONLY`)
+
+	rows, err := c.db.QueryxContext(ctx, sb.String(), args...)
+	if err != nil {
+		return nil, "", err
+	}
+	defer rows.Close()
+
+	var ret []*ServerPermissionModel
+	for rows.Next() {
+		var spModel ServerPermissionModel
+		err = rows.StructScan(&spModel)
+		if err != nil {
+			return nil, "", err
+		}
+		ret = append(ret, &spModel)
+	}
+	if rows.Err() != nil {
+		return nil, "", rows.Err()
+	}
+
+	var nextPageToken string
+	if len(ret) > limit {
+		offset += limit
+		nextPageToken = strconv.Itoa(offset)
+		ret = ret[:limit]
+	}
+
+	return ret, nextPageToken, nil
+}
+
+func (c *Client) ListDatabasePermissions(ctx context.Context, pager *Pager) ([]*ServerPermissionModel, string, error) {
+	l := ctxzap.Extract(ctx)
+	l.Debug("listing database permissions")
+
+	offset, limit, err := pager.Parse()
+	if err != nil {
+		return nil, "", err
+	}
+	args := []interface{}{offset, limit + 1}
+
+	var sb strings.Builder
+	sb.WriteString(`SELECT
+principals.name as principal_name,
+perms.grantee_principal_id as principal_id,
+perms.state as state,
+STRING_AGG(perms.type, ',') as perms,
+principals.type as principal_type
+FROM sys.server_permissions perms
+         JOIN sys.server_principals principals ON perms.grantee_principal_id = principals.principal_id
+WHERE perms.state = 'G' OR perms.state = 'W'
+GROUP BY perms.grantee_principal_id, perms.state, principals.name, principals.type
 ORDER BY perms.grantee_principal_id ASC
 OFFSET @p1 ROWS FETCH NEXT @p2 ROWS ONLY`)
 

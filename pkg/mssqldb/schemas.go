@@ -2,34 +2,37 @@ package mssqldb
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 	"strings"
 
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
 )
 
-const TableType = "table"
+const SchemaType = "schema"
 
-type TableModel struct {
-	ID   string `db:"object_id"`
-	Name string `db:"name"`
-	Type string `db:"type_desc"`
+type SchemaModel struct {
+	ID      int64  `db:"schema_id"`
+	OwnerID int64  `db:"principal_id"`
+	Name    string `db:"name"`
 }
 
-func (c *Client) ListTables(ctx context.Context, pager *Pager, dbName string, schemaID int64) ([]*TableModel, string, error) {
+func (c *Client) ListSchemas(ctx context.Context, pager *Pager, dbName string) ([]*SchemaModel, string, error) {
 	l := ctxzap.Extract(ctx)
-	l.Debug("listing tables")
+	l.Debug("listing schemas")
 
 	offset, limit, err := pager.Parse()
 	if err != nil {
 		return nil, "", err
 	}
-	args := []interface{}{schemaID, offset, limit + 1}
+	args := []interface{}{offset, limit + 1}
 
 	var sb strings.Builder
-	sb.WriteString(`SELECT object_id, name, type_desc FROM `)
+	sb.WriteString(`SELECT schema_id, principal_id, name FROM `)
 	sb.WriteString(dbName)
-	sb.WriteString(`.sys.tables WHERE schema_id=@p1 ORDER BY object_id ASC OFFSET @p2 ROWS FETCH NEXT @p3 ROWS ONLY`)
+	sb.WriteString(`.sys.schemas ORDER BY schema_id ASC OFFSET @p1 ROWS FETCH NEXT @p2 ROWS ONLY`)
+
+	fmt.Println(sb.String())
 
 	rows, err := c.db.QueryxContext(ctx, sb.String(), args...)
 	if err != nil {
@@ -37,14 +40,14 @@ func (c *Client) ListTables(ctx context.Context, pager *Pager, dbName string, sc
 	}
 	defer rows.Close()
 
-	var ret []*TableModel
+	var ret []*SchemaModel
 	for rows.Next() {
-		var tableModel TableModel
-		err = rows.StructScan(&tableModel)
+		var schemaModel SchemaModel
+		err = rows.StructScan(&schemaModel)
 		if err != nil {
 			return nil, "", err
 		}
-		ret = append(ret, &tableModel)
+		ret = append(ret, &schemaModel)
 	}
 	if rows.Err() != nil {
 		return nil, "", rows.Err()

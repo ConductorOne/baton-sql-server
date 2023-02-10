@@ -40,6 +40,7 @@ func (o *Mssqldb) ResourceSyncers(ctx context.Context) []connectorbuilder.Resour
 		newServerSyncer(ctx, o.client),
 		newEndpointSyncer(ctx, o.client),
 		newDatabaseSyncer(ctx, o.client),
+		newSchemaSyncer(ctx, o.client),
 		newTableSyncer(ctx, o.client),
 		newUserPrincipalSyncer(ctx, o.client),
 		newRolePrincipalSyncer(ctx, o.client),

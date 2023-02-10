@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/ConductorOne/baton-mssqldb/pkg/mssqldb"
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
@@ -27,20 +28,21 @@ func (d *tableSyncer) List(ctx context.Context, parentResourceID *v2.ResourceId,
 		return nil, "", nil, nil
 	}
 
-	if parentResourceID.ResourceType != mssqldb.DatabaseType {
-		return nil, "", nil, fmt.Errorf("tables must have a database parent resource")
+	if parentResourceID.ResourceType != mssqldb.SchemaType {
+		return nil, "", nil, fmt.Errorf("tables must have a schema parent resource")
 	}
 
-	dbID, err := strconv.ParseInt(parentResourceID.Resource, 10, 64)
+	idParts := strings.SplitN(parentResourceID.Resource, ":", 2)
+	if len(idParts) != 2 {
+		return nil, "", nil, fmt.Errorf("maleformed parent resource ID")
+	}
+
+	schemaID, err := strconv.ParseInt(idParts[1], 10, 64)
 	if err != nil {
 		return nil, "", nil, err
 	}
-	db, err := d.client.GetDatabase(ctx, dbID)
-	if err != nil {
-		return nil, "", nil, err
-	}
 
-	tables, nextPageToken, err := d.client.ListTables(ctx, &mssqldb.Pager{Token: pToken.Token, Size: pToken.Size}, db.Name)
+	tables, nextPageToken, err := d.client.ListTables(ctx, &mssqldb.Pager{Token: pToken.Token, Size: pToken.Size}, idParts[0], schemaID)
 	if err != nil {
 		return nil, "", nil, err
 	}

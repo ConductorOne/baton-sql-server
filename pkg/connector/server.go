@@ -92,6 +92,7 @@ func (d *serverSyncer) Entitlements(ctx context.Context, resource *v2.Resource, 
 
 	for key, name := range serverPermissions {
 		ret = append(ret, enTypes.NewPermissionEntitlement(resource, key, enTypes.WithDisplayName(name)))
+		ret = append(ret, enTypes.NewPermissionEntitlement(resource, key+"-grant", enTypes.WithDisplayName(name+" - With Grant Option")))
 	}
 
 	return ret, "", nil, nil
@@ -114,10 +115,18 @@ func (d *serverSyncer) Grants(ctx context.Context, resource *v2.Resource, pToken
 				if err != nil {
 					return nil, "", nil, err
 				}
-				ret = append(ret, grTypes.NewGrant(resource, perm, &v2.ResourceId{
-					ResourceType: rt.Id,
-					Resource:     p.PrincipalID,
-				}))
+				switch p.State {
+				case "G":
+					ret = append(ret, grTypes.NewGrant(resource, perm, &v2.ResourceId{
+						ResourceType: rt.Id,
+						Resource:     p.PrincipalID,
+					}))
+				case "W":
+					ret = append(ret, grTypes.NewGrant(resource, perm+"-grant", &v2.ResourceId{
+						ResourceType: rt.Id,
+						Resource:     p.PrincipalID,
+					}))
+				}
 			}
 		}
 	}

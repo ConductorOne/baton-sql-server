@@ -18,6 +18,11 @@ var (
 		Id:          mssqldb.DatabaseType,
 		DisplayName: "Database",
 	}
+
+	resourceTypeSchema = &v2.ResourceType{
+		Id:          mssqldb.SchemaType,
+		DisplayName: "Schema",
+	}
 	resourceTypeTable = &v2.ResourceType{
 		Id:          mssqldb.TableType,
 		DisplayName: "Table",
