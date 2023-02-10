@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/ConductorOne/baton-mssqldb/pkg/connector"
 	"github.com/conductorone/baton-sdk/pkg/cli"
+	"github.com/conductorone/baton-sdk/pkg/connectorbuilder"
 	"github.com/conductorone/baton-sdk/pkg/sdk"
 	"github.com/conductorone/baton-sdk/pkg/types"
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
@@ -25,6 +27,7 @@ func main() {
 	}
 
 	cmd.Version = version
+	cmd.PersistentFlags().String("dsn", "", "The connection string for connecting to MS SQL ($BATON_DSN)")
 
 	err = cmd.Execute()
 	if err != nil {
@@ -36,9 +39,14 @@ func main() {
 func getConnector(ctx context.Context, cfg *config) (types.ConnectorServer, error) {
 	l := ctxzap.Extract(ctx)
 
-	c, err := sdk.NewEmptyConnector()
+	cb, err := connector.New(ctx, cfg.Dsn)
 	if err != nil {
 		l.Error("error creating connector", zap.Error(err))
+		return nil, err
+	}
+
+	c, err := connectorbuilder.NewConnector(ctx, cb)
+	if err != nil {
 		return nil, err
 	}
 

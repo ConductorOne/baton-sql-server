@@ -1,0 +1,40 @@
+package connector
+
+import (
+	"github.com/ConductorOne/baton-mssqldb/pkg/mssqldb"
+	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
+)
+
+var (
+	resourceTypeServer = &v2.ResourceType{
+		Id:          mssqldb.ServerType,
+		DisplayName: "Server",
+	}
+	resourceTypeEndpoint = &v2.ResourceType{
+		Id:          mssqldb.EndpointType,
+		DisplayName: "Endpoint",
+	}
+	resourceTypeDatabase = &v2.ResourceType{
+		Id:          mssqldb.DatabaseType,
+		DisplayName: "Database",
+	}
+	resourceTypeTable = &v2.ResourceType{
+		Id:          mssqldb.TableType,
+		DisplayName: "Table",
+	}
+	resourceTypeUser = &v2.ResourceType{
+		Id:          mssqldb.UserType,
+		DisplayName: "User",
+		Traits:      []v2.ResourceType_Trait{v2.ResourceType_TRAIT_USER},
+	}
+	resourceTypeGroup = &v2.ResourceType{
+		Id:          mssqldb.GroupType,
+		DisplayName: "Group",
+		Traits:      []v2.ResourceType_Trait{v2.ResourceType_TRAIT_GROUP},
+	}
+	resourceTypeRole = &v2.ResourceType{
+		Id:          mssqldb.RoleType,
+		DisplayName: "Role",
+		Traits:      []v2.ResourceType_Trait{v2.ResourceType_TRAIT_ROLE},
+	}
+)
