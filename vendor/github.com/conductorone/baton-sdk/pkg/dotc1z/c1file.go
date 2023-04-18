@@ -68,8 +68,10 @@ func NewC1ZFile(ctx context.Context, outputFilePath string) (*C1File, error) {
 // Close ensures that the sqlite database is flushed to disk, and if any changes were made we update the original database
 // with our changes.
 func (c *C1File) Close() error {
+	var err error
+
 	if c.rawDb != nil {
-		err := c.rawDb.Close()
+		err = c.rawDb.Close()
 		if err != nil {
 			return err
 		}
@@ -79,7 +81,7 @@ func (c *C1File) Close() error {
 
 	// We only want to save the file if we've made any changes
 	if c.dbUpdated {
-		err := saveC1z(c.dbFilePath, c.outputFilePath)
+		err = saveC1z(c.dbFilePath, c.outputFilePath)
 		if err != nil {
 			return err
 		}
@@ -95,16 +97,7 @@ func (c *C1File) init(ctx context.Context) error {
 		return err
 	}
 
-	tables := []tableDescriptor{
-		resourceTypes,
-		resources,
-		entitlements,
-		grants,
-		syncRuns,
-		assets,
-	}
-
-	for _, t := range tables {
+	for _, t := range allTableDescriptors {
 		query, args := t.Schema()
 
 		_, err = c.db.ExecContext(ctx, fmt.Sprintf(query, args...))

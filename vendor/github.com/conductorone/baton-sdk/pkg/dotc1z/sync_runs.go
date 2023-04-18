@@ -5,10 +5,14 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"os"
+	"strconv"
 	"time"
 
 	"github.com/doug-martin/goqu/v9"
+	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
 	"github.com/segmentio/ksuid"
+	"go.uber.org/zap"
 )
 
 const syncRunsTableVersion = "1"
@@ -114,6 +118,64 @@ func (c *C1File) getFinishedSync(ctx context.Context, offset uint) (*syncRun, er
 	}
 
 	return ret, nil
+}
+
+func (c *C1File) ListSyncRuns(ctx context.Context, pageToken string, pageSize int) ([]*syncRun, string, error) {
+	err := c.validateDb(ctx)
+	if err != nil {
+		return nil, "", err
+	}
+
+	q := c.db.From(syncRuns.Name()).Prepared(true)
+	q = q.Select("id", "sync_id", "started_at", "ended_at", "sync_token")
+
+	if pageToken != "" {
+		q = q.Where(goqu.C("id").Gte(pageToken))
+	}
+
+	if pageSize > maxPageSize || pageSize <= 0 {
+		pageSize = maxPageSize
+	}
+
+	q = q.Order(goqu.C("id").Asc())
+	q = q.Limit(uint(pageSize + 1))
+
+	var ret []*syncRun
+
+	query, args, err := q.ToSQL()
+	if err != nil {
+		return nil, "", err
+	}
+
+	rows, err := c.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, "", err
+	}
+	defer rows.Close()
+
+	count := 0
+	lastRow := 0
+	for rows.Next() {
+		count++
+		if count > pageSize {
+			break
+		}
+		rowId := 0
+		data := &syncRun{}
+		err := rows.Scan(&rowId, &data.ID, &data.StartedAt, &data.EndedAt, &data.SyncToken)
+		if err != nil {
+			return nil, "", err
+		}
+		lastRow = rowId
+		ret = append(ret, data)
+	}
+
+	nextPageToken := ""
+	if count > pageSize {
+		nextPageToken = strconv.Itoa(lastRow + 1)
+	}
+
+	return ret, nextPageToken, nil
 }
 
 func (c *C1File) LatestSyncID(ctx context.Context) (string, error) {
@@ -288,6 +350,96 @@ func (c *C1File) EndSync(ctx context.Context) error {
 	}
 
 	c.currentSyncID = ""
+	c.dbUpdated = true
+
+	return nil
+}
+
+func (c *C1File) Cleanup(ctx context.Context) error {
+	l := ctxzap.Extract(ctx)
+
+	if skipCleanup, _ := strconv.ParseBool(os.Getenv("BATON_SKIP_CLEANUP")); skipCleanup {
+		return nil
+	}
+
+	err := c.validateDb(ctx)
+	if err != nil {
+		return err
+	}
+
+	if c.currentSyncID != "" {
+		return nil
+	}
+
+	var ret []*syncRun
+
+	pageToken := ""
+	for {
+		runs, nextPageToken, err := c.ListSyncRuns(ctx, pageToken, 100)
+		if err != nil {
+			return err
+		}
+
+		for _, sr := range runs {
+			if sr.EndedAt == nil {
+				continue
+			}
+			ret = append(ret, sr)
+		}
+
+		if nextPageToken == "" {
+			break
+		}
+		pageToken = nextPageToken
+	}
+
+	syncLimit := 2
+	if customSyncLimit, err := strconv.ParseInt(os.Getenv("BATON_KEEP_SYNC_COUNT"), 10, 64); err == nil && customSyncLimit > 0 {
+		syncLimit = int(customSyncLimit)
+	}
+
+	if len(ret) <= syncLimit {
+		return nil
+	}
+
+	l.Info("Cleaning up old sync data...")
+	for i := 0; i < len(ret)-syncLimit; i++ {
+		err = c.DeleteSyncRun(ctx, ret[i].ID)
+		if err != nil {
+			return err
+		}
+		l.Info("Removed old sync data.", zap.String("sync_date", ret[i].EndedAt.Format(time.RFC3339)), zap.String("sync_id", ret[i].ID))
+	}
+
+	return nil
+}
+
+// DeleteSyncRun removes all the objects with a given syncID from the database.
+func (c *C1File) DeleteSyncRun(ctx context.Context, syncID string) error {
+	err := c.validateDb(ctx)
+	if err != nil {
+		return err
+	}
+
+	// Bail if we're actively syncing
+	if c.currentSyncID != "" && c.currentSyncID == syncID {
+		return fmt.Errorf("unable to delete the current active sync run")
+	}
+
+	for _, t := range allTableDescriptors {
+		q := c.db.Delete(t.Name())
+		q = q.Where(goqu.C("sync_id").Eq(syncID))
+
+		query, args, err := q.ToSQL()
+		if err != nil {
+			return err
+		}
+
+		_, err = c.db.ExecContext(ctx, query, args...)
+		if err != nil {
+			return err
+		}
+	}
 	c.dbUpdated = true
 
 	return nil
