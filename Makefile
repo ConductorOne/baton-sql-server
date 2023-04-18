@@ -7,7 +7,7 @@ OUTPUT_PATH = ${BUILD_DIR}/baton-mssqldb
 build:
 	rm -f ${OUTPUT_PATH}
 	mkdir -p ${BUILD_DIR}
-	go build -o ${OUTPUT_PATH} cmd/baton-mssqldb/*.go
+	go build -o ${OUTPUT_PATH} ./cmd/baton-mssqldb
 
 .PHONY: update-deps
 update-deps:
