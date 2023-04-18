@@ -48,7 +48,7 @@ func (d *databaseRolePrincipalSyncer) List(ctx context.Context, parentResourceID
 	var ret []*v2.Resource
 	for _, principalModel := range principals {
 		r, err := resource.NewRoleResource(
-			principalModel.Name,
+			fmt.Sprintf("%s (%s)", principalModel.Name, db.Name),
 			d.ResourceType(ctx),
 			fmt.Sprintf("%s:%d", db.Name, principalModel.ID),
 			nil,

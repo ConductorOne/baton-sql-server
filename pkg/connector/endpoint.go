@@ -65,7 +65,13 @@ func (d *endpointSyncer) Entitlements(ctx context.Context, resource *v2.Resource
 	var ret []*v2.Entitlement
 
 	for key, name := range endpointPermissions {
-		ret = append(ret, enTypes.NewPermissionEntitlement(resource, key, enTypes.WithDisplayName(name)))
+		ret = append(ret, &v2.Entitlement{
+			Id:          enTypes.NewEntitlementID(resource, key),
+			DisplayName: name,
+			Slug:        name,
+			Purpose:     v2.Entitlement_PURPOSE_VALUE_PERMISSION,
+			Resource:    resource,
+		})
 	}
 
 	return ret, "", nil, nil

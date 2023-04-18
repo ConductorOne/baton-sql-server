@@ -50,10 +50,15 @@ func (d *tableSyncer) List(ctx context.Context, parentResourceID *v2.ResourceId,
 
 	idParts := strings.SplitN(parentResourceID.Resource, ":", 2)
 	if len(idParts) != 2 {
-		return nil, "", nil, fmt.Errorf("maleformed parent resource ID")
+		return nil, "", nil, fmt.Errorf("malformed parent resource ID")
 	}
 
 	schemaID, err := strconv.ParseInt(idParts[1], 10, 64)
+	if err != nil {
+		return nil, "", nil, err
+	}
+
+	schema, err := d.client.GetSchema(ctx, idParts[0], schemaID)
 	if err != nil {
 		return nil, "", nil, err
 	}
@@ -66,7 +71,7 @@ func (d *tableSyncer) List(ctx context.Context, parentResourceID *v2.ResourceId,
 	var ret []*v2.Resource
 	for _, tableModel := range tables {
 		r, err := resource.NewResource(
-			tableModel.Name,
+			fmt.Sprintf("%s: %s: %s", idParts[0], schema.Name, tableModel.Name),
 			d.ResourceType(ctx),
 			tableModel.ID,
 			resource.WithParentResourceID(parentResourceID),
@@ -84,7 +89,13 @@ func (d *tableSyncer) Entitlements(ctx context.Context, resource *v2.Resource, p
 	var ret []*v2.Entitlement
 
 	for key, name := range tablePermissions {
-		ret = append(ret, enTypes.NewPermissionEntitlement(resource, key, enTypes.WithDisplayName(name)))
+		ret = append(ret, &v2.Entitlement{
+			Id:          enTypes.NewEntitlementID(resource, key),
+			DisplayName: name,
+			Slug:        name,
+			Purpose:     v2.Entitlement_PURPOSE_VALUE_PERMISSION,
+			Resource:    resource,
+		})
 	}
 
 	return ret, "", nil, nil

@@ -63,7 +63,7 @@ func (d *schemaSyncer) List(ctx context.Context, parentResourceID *v2.ResourceId
 	var ret []*v2.Resource
 	for _, schemaModel := range schemas {
 		r, err := resource.NewResource(
-			schemaModel.Name,
+			fmt.Sprintf("%s (%s)", schemaModel.Name, db.Name),
 			d.ResourceType(ctx),
 			fmt.Sprintf("%s:%d", db.Name, schemaModel.ID),
 			resource.WithParentResourceID(parentResourceID),
@@ -82,7 +82,13 @@ func (d *schemaSyncer) Entitlements(ctx context.Context, resource *v2.Resource, 
 	var ret []*v2.Entitlement
 
 	for key, name := range schemaPermissions {
-		ret = append(ret, enTypes.NewPermissionEntitlement(resource, key, enTypes.WithDisplayName(name)))
+		ret = append(ret, &v2.Entitlement{
+			Id:          enTypes.NewEntitlementID(resource, key),
+			DisplayName: name,
+			Slug:        name,
+			Purpose:     v2.Entitlement_PURPOSE_VALUE_PERMISSION,
+			Resource:    resource,
+		})
 	}
 
 	return ret, "", nil, nil

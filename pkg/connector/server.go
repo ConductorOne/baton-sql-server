@@ -2,6 +2,7 @@ package connector
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"github.com/ConductorOne/baton-mssqldb/pkg/mssqldb"
@@ -91,8 +92,20 @@ func (d *serverSyncer) Entitlements(ctx context.Context, resource *v2.Resource, 
 	var ret []*v2.Entitlement
 
 	for key, name := range serverPermissions {
-		ret = append(ret, enTypes.NewPermissionEntitlement(resource, key, enTypes.WithDisplayName(name)))
-		ret = append(ret, enTypes.NewPermissionEntitlement(resource, key+"-grant", enTypes.WithDisplayName(name+" - With Grant Option")))
+		ret = append(ret, &v2.Entitlement{
+			Id:          enTypes.NewEntitlementID(resource, key),
+			DisplayName: name,
+			Slug:        name,
+			Purpose:     v2.Entitlement_PURPOSE_VALUE_PERMISSION,
+			Resource:    resource,
+		})
+		ret = append(ret, &v2.Entitlement{
+			Id:          enTypes.NewEntitlementID(resource, key+"-grant"),
+			DisplayName: fmt.Sprintf("%s (With Grant)", name),
+			Slug:        fmt.Sprintf("%s (With Grant)", name),
+			Purpose:     v2.Entitlement_PURPOSE_VALUE_PERMISSION,
+			Resource:    resource,
+		})
 	}
 
 	return ret, "", nil, nil
