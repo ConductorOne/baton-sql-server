@@ -3,6 +3,8 @@ package connector
 import (
 	"context"
 	"fmt"
+	"strconv"
+	"strings"
 
 	"github.com/ConductorOne/baton-mssqldb/pkg/mssqldb"
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
@@ -10,6 +12,7 @@ import (
 	_ "github.com/conductorone/baton-sdk/pkg/annotations"
 	"github.com/conductorone/baton-sdk/pkg/pagination"
 	enTypes "github.com/conductorone/baton-sdk/pkg/types/entitlement"
+	grTypes "github.com/conductorone/baton-sdk/pkg/types/grant"
 	"github.com/conductorone/baton-sdk/pkg/types/resource"
 )
 
@@ -73,6 +76,7 @@ var databasePermissions = map[string]string{
 	"CRTY": "Create Type",
 	"CRVW": "Create View",
 	"CRXS": "Create XML Schema Collection",
+	"DL":   "Delete",
 	"DABO": "Administer Database Bulk Operations",
 	"EAES": "Execute Any External Script",
 	"EX":   "Execute",
@@ -116,6 +120,8 @@ func (d *databaseSyncer) List(ctx context.Context, parentResourceID *v2.Resource
 			d.ResourceType(ctx),
 			dbModel.ID,
 			resource.WithAnnotation(&v2.ChildResourceType{ResourceTypeId: resourceTypeSchema.Id}),
+			resource.WithAnnotation(&v2.ChildResourceType{ResourceTypeId: resourceTypeDatabaseRole.Id}),
+			resource.WithAnnotation(&v2.ChildResourceType{ResourceTypeId: resourceTypeDatabaseUser.Id}),
 		)
 		if err != nil {
 			return nil, "", nil, err
@@ -137,7 +143,56 @@ func (d *databaseSyncer) Entitlements(ctx context.Context, resource *v2.Resource
 }
 
 func (d *databaseSyncer) Grants(ctx context.Context, resource *v2.Resource, pToken *pagination.Token) ([]*v2.Grant, string, annotations.Annotations, error) {
-	return nil, "", nil, nil
+	var ret []*v2.Grant
+
+	dbID, err := strconv.ParseInt(resource.Id.Resource, 10, 64)
+	if err != nil {
+		return nil, "", nil, err
+	}
+	db, err := d.client.GetDatabase(ctx, dbID)
+	if err != nil {
+		return nil, "", nil, err
+	}
+
+	principalPerms, nextPageToken, err := d.client.ListDatabasePermissions(ctx, db.Name, &mssqldb.Pager{Size: pToken.Size, Token: pToken.Token})
+	if err != nil {
+		return nil, "", nil, err
+	}
+
+	for _, p := range principalPerms {
+		perms := strings.Split(p.Permissions, ",")
+		for _, perm := range perms {
+			perm = strings.TrimSpace(perm)
+			if _, ok := databasePermissions[perm]; ok {
+				rt, err := resourceTypeFromDatabasePrincipal(p.PrincipalType)
+				if err != nil {
+					return nil, "", nil, err
+				}
+
+				resourceID := &v2.ResourceId{
+					ResourceType: rt.Id,
+					Resource:     fmt.Sprintf("%s:%s", db.Name, p.PrincipalID),
+				}
+
+				if rt.Id == resourceTypeDatabaseRole.Id {
+					resourceID.Resource = fmt.Sprintf("%s:%s", db.Name, p.PrincipalID)
+				}
+
+				switch p.State {
+				case "G":
+					ret = append(ret, grTypes.NewGrant(resource, perm, &v2.Resource{
+						Id: resourceID,
+					}))
+				case "W":
+					ret = append(ret, grTypes.NewGrant(resource, perm+"-grant", &v2.Resource{
+						Id: resourceID,
+					}))
+				}
+			}
+		}
+	}
+
+	return ret, nextPageToken, nil, nil
 }
 
 func newDatabaseSyncer(ctx context.Context, c *mssqldb.Client) *databaseSyncer {

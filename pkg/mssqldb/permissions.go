@@ -8,7 +8,7 @@ import (
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
 )
 
-type ServerPermissionModel struct {
+type PermissionModel struct {
 	PrincipalName string `db:"principal_name"`
 	PrincipalID   string `db:"principal_id"`
 	PrincipalType string `db:"principal_type"`
@@ -16,7 +16,7 @@ type ServerPermissionModel struct {
 	Permissions   string `db:"perms"`
 }
 
-func (c *Client) ListServerPermissions(ctx context.Context, pager *Pager) ([]*ServerPermissionModel, string, error) {
+func (c *Client) ListServerPermissions(ctx context.Context, pager *Pager) ([]*PermissionModel, string, error) {
 	l := ctxzap.Extract(ctx)
 	l.Debug("listing server permissions")
 
@@ -46,9 +46,9 @@ OFFSET @p1 ROWS FETCH NEXT @p2 ROWS ONLY`)
 	}
 	defer rows.Close()
 
-	var ret []*ServerPermissionModel
+	var ret []*PermissionModel
 	for rows.Next() {
-		var spModel ServerPermissionModel
+		var spModel PermissionModel
 		err = rows.StructScan(&spModel)
 		if err != nil {
 			return nil, "", err
@@ -69,7 +69,7 @@ OFFSET @p1 ROWS FETCH NEXT @p2 ROWS ONLY`)
 	return ret, nextPageToken, nil
 }
 
-func (c *Client) ListDatabasePermissions(ctx context.Context, pager *Pager) ([]*ServerPermissionModel, string, error) {
+func (c *Client) ListDatabasePermissions(ctx context.Context, dbName string, pager *Pager) ([]*PermissionModel, string, error) {
 	l := ctxzap.Extract(ctx)
 	l.Debug("listing database permissions")
 
@@ -81,14 +81,19 @@ func (c *Client) ListDatabasePermissions(ctx context.Context, pager *Pager) ([]*
 
 	var sb strings.Builder
 	sb.WriteString(`SELECT
-principals.name as principal_name,
-perms.grantee_principal_id as principal_id,
-perms.state as state,
-STRING_AGG(perms.type, ',') as perms,
-principals.type as principal_type
-FROM sys.server_permissions perms
-         JOIN sys.server_principals principals ON perms.grantee_principal_id = principals.principal_id
-WHERE perms.state = 'G' OR perms.state = 'W'
+    principals.name as principal_name,
+    perms.grantee_principal_id as principal_id,
+    perms.state as state,
+    STRING_AGG(perms.type, ',') as perms,
+    principals.type as principal_type
+FROM `)
+	sb.WriteString(dbName)
+	sb.WriteString(`.sys.database_permissions perms
+         JOIN `)
+	sb.WriteString(dbName)
+	sb.WriteString(`.sys.database_principals AS principals
+             ON perms.grantee_principal_id = principals.principal_id
+WHERE (perms.state = 'G' OR perms.state = 'W') AND (perms.class = 0 AND perms.major_id = 0)
 GROUP BY perms.grantee_principal_id, perms.state, principals.name, principals.type
 ORDER BY perms.grantee_principal_id ASC
 OFFSET @p1 ROWS FETCH NEXT @p2 ROWS ONLY`)
@@ -99,14 +104,14 @@ OFFSET @p1 ROWS FETCH NEXT @p2 ROWS ONLY`)
 	}
 	defer rows.Close()
 
-	var ret []*ServerPermissionModel
+	var ret []*PermissionModel
 	for rows.Next() {
-		var spModel ServerPermissionModel
-		err = rows.StructScan(&spModel)
+		var dpModel PermissionModel
+		err = rows.StructScan(&dpModel)
 		if err != nil {
 			return nil, "", err
 		}
-		ret = append(ret, &spModel)
+		ret = append(ret, &dpModel)
 	}
 	if rows.Err() != nil {
 		return nil, "", rows.Err()

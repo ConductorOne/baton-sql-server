@@ -33,7 +33,7 @@ func (d *userPrincipalSyncer) List(ctx context.Context, parentResourceID *v2.Res
 		return nil, "", nil, nil
 	}
 
-	principals, nextPageToken, err := d.client.ListUserPrincipals(ctx, &mssqldb.Pager{Token: pToken.Token, Size: pToken.Size})
+	principals, nextPageToken, err := d.client.ListServerUserPrincipals(ctx, &mssqldb.Pager{Token: pToken.Token, Size: pToken.Size})
 	if err != nil {
 		return nil, "", nil, err
 	}

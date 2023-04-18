@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/ConductorOne/baton-mssqldb/pkg/mssqldb"
-	"github.com/conductorone/baton-sdk/pb/c1/connector/v2"
+	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/annotations"
 	_ "github.com/conductorone/baton-sdk/pkg/annotations"
 	"github.com/conductorone/baton-sdk/pkg/connectorbuilder"
@@ -43,7 +43,9 @@ func (o *Mssqldb) ResourceSyncers(ctx context.Context) []connectorbuilder.Resour
 		newSchemaSyncer(ctx, o.client),
 		newTableSyncer(ctx, o.client),
 		newUserPrincipalSyncer(ctx, o.client),
-		newRolePrincipalSyncer(ctx, o.client),
+		newServerRolePrincipalSyncer(ctx, o.client),
+		newDatabaseRolePrincipalSyncer(ctx, o.client),
+		newDatabaseUserPrincipalSyncer(ctx, o.client),
 		newGroupPrincipalSyncer(ctx, o.client),
 	}
 }

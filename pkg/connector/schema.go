@@ -10,12 +10,27 @@ import (
 	"github.com/conductorone/baton-sdk/pkg/annotations"
 	_ "github.com/conductorone/baton-sdk/pkg/annotations"
 	"github.com/conductorone/baton-sdk/pkg/pagination"
+	enTypes "github.com/conductorone/baton-sdk/pkg/types/entitlement"
 	"github.com/conductorone/baton-sdk/pkg/types/resource"
 )
 
 type schemaSyncer struct {
 	resourceType *v2.ResourceType
 	client       *mssqldb.Client
+}
+
+var schemaPermissions = map[string]string{
+	"AL":   "Alter",
+	"CL":   "Control",
+	"DL":   "Delete",
+	"EX":   "Execute",
+	"IN":   "Insert",
+	"RF":   "References",
+	"SL":   "Select",
+	"TO":   "Take Ownership",
+	"UP":   "Update",
+	"VW":   "View Definition",
+	"VWCT": "View Change Tracking",
 }
 
 func (d *schemaSyncer) ResourceType(ctx context.Context) *v2.ResourceType {
@@ -59,13 +74,18 @@ func (d *schemaSyncer) List(ctx context.Context, parentResourceID *v2.ResourceId
 		}
 		ret = append(ret, r)
 	}
-	fmt.Println("**** WE GOT SOME SCHEMAS")
 
 	return ret, nextPageToken, nil, nil
 }
 
 func (d *schemaSyncer) Entitlements(ctx context.Context, resource *v2.Resource, pToken *pagination.Token) ([]*v2.Entitlement, string, annotations.Annotations, error) {
-	return nil, "", nil, nil
+	var ret []*v2.Entitlement
+
+	for key, name := range schemaPermissions {
+		ret = append(ret, enTypes.NewPermissionEntitlement(resource, key, enTypes.WithDisplayName(name)))
+	}
+
+	return ret, "", nil, nil
 }
 
 func (d *schemaSyncer) Grants(ctx context.Context, resource *v2.Resource, pToken *pagination.Token) ([]*v2.Grant, string, annotations.Annotations, error) {

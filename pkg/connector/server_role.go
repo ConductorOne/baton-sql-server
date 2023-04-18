@@ -11,21 +11,21 @@ import (
 	"github.com/conductorone/baton-sdk/pkg/types/resource"
 )
 
-type rolePrincipalSyncer struct {
+type serverRolePrincipalSyncer struct {
 	resourceType *v2.ResourceType
 	client       *mssqldb.Client
 }
 
-func (d *rolePrincipalSyncer) ResourceType(ctx context.Context) *v2.ResourceType {
+func (d *serverRolePrincipalSyncer) ResourceType(ctx context.Context) *v2.ResourceType {
 	return d.resourceType
 }
 
-func (d *rolePrincipalSyncer) List(ctx context.Context, parentResourceID *v2.ResourceId, pToken *pagination.Token) ([]*v2.Resource, string, annotations.Annotations, error) {
+func (d *serverRolePrincipalSyncer) List(ctx context.Context, parentResourceID *v2.ResourceId, pToken *pagination.Token) ([]*v2.Resource, string, annotations.Annotations, error) {
 	if parentResourceID == nil {
 		return nil, "", nil, nil
 	}
 
-	principals, nextPageToken, err := d.client.ListRolePrincipals(ctx, &mssqldb.Pager{Token: pToken.Token, Size: pToken.Size})
+	principals, nextPageToken, err := d.client.ListServerRolePrincipals(ctx, &mssqldb.Pager{Token: pToken.Token, Size: pToken.Size})
 	if err != nil {
 		return nil, "", nil, err
 	}
@@ -48,17 +48,17 @@ func (d *rolePrincipalSyncer) List(ctx context.Context, parentResourceID *v2.Res
 	return ret, nextPageToken, nil, nil
 }
 
-func (d *rolePrincipalSyncer) Entitlements(ctx context.Context, resource *v2.Resource, pToken *pagination.Token) ([]*v2.Entitlement, string, annotations.Annotations, error) {
+func (d *serverRolePrincipalSyncer) Entitlements(ctx context.Context, resource *v2.Resource, pToken *pagination.Token) ([]*v2.Entitlement, string, annotations.Annotations, error) {
 	return nil, "", nil, nil
 }
 
-func (d *rolePrincipalSyncer) Grants(ctx context.Context, resource *v2.Resource, pToken *pagination.Token) ([]*v2.Grant, string, annotations.Annotations, error) {
+func (d *serverRolePrincipalSyncer) Grants(ctx context.Context, resource *v2.Resource, pToken *pagination.Token) ([]*v2.Grant, string, annotations.Annotations, error) {
 	return nil, "", nil, nil
 }
 
-func newRolePrincipalSyncer(ctx context.Context, c *mssqldb.Client) *rolePrincipalSyncer {
-	return &rolePrincipalSyncer{
-		resourceType: resourceTypeRole,
+func newServerRolePrincipalSyncer(ctx context.Context, c *mssqldb.Client) *serverRolePrincipalSyncer {
+	return &serverRolePrincipalSyncer{
+		resourceType: resourceTypeServerRole,
 		client:       c,
 	}
 }

@@ -75,7 +75,7 @@ func (d *serverSyncer) List(ctx context.Context, parentResourceID *v2.ResourceId
 			&v2.ChildResourceType{ResourceTypeId: resourceTypeEndpoint.Id},
 			&v2.ChildResourceType{ResourceTypeId: resourceTypeDatabase.Id},
 			&v2.ChildResourceType{ResourceTypeId: resourceTypeUser.Id},
-			&v2.ChildResourceType{ResourceTypeId: resourceTypeRole.Id},
+			&v2.ChildResourceType{ResourceTypeId: resourceTypeServerRole.Id},
 			&v2.ChildResourceType{ResourceTypeId: resourceTypeGroup.Id},
 		),
 	)
@@ -111,7 +111,7 @@ func (d *serverSyncer) Grants(ctx context.Context, resource *v2.Resource, pToken
 		for _, perm := range perms {
 			perm = strings.TrimSpace(perm)
 			if _, ok := serverPermissions[perm]; ok {
-				rt, err := resourceTypeFromPrincipal(p.PrincipalType)
+				rt, err := resourceTypeFromServerPrincipal(p.PrincipalType)
 				if err != nil {
 					return nil, "", nil, err
 				}

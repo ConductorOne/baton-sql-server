@@ -2,7 +2,6 @@ package mssqldb
 
 import (
 	"context"
-	"fmt"
 	"strconv"
 	"strings"
 
@@ -31,8 +30,6 @@ func (c *Client) ListSchemas(ctx context.Context, pager *Pager, dbName string) (
 	sb.WriteString(`SELECT schema_id, principal_id, name FROM `)
 	sb.WriteString(dbName)
 	sb.WriteString(`.sys.schemas ORDER BY schema_id ASC OFFSET @p1 ROWS FETCH NEXT @p2 ROWS ONLY`)
-
-	fmt.Println(sb.String())
 
 	rows, err := c.db.QueryxContext(ctx, sb.String(), args...)
 	if err != nil {

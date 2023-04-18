@@ -37,9 +37,20 @@ var (
 		DisplayName: "Group",
 		Traits:      []v2.ResourceType_Trait{v2.ResourceType_TRAIT_GROUP},
 	}
-	resourceTypeRole = &v2.ResourceType{
-		Id:          mssqldb.RoleType,
-		DisplayName: "Role",
+	resourceTypeServerRole = &v2.ResourceType{
+		Id:          mssqldb.ServerRoleType,
+		DisplayName: "Server Role",
 		Traits:      []v2.ResourceType_Trait{v2.ResourceType_TRAIT_ROLE},
+	}
+	resourceTypeDatabaseRole = &v2.ResourceType{
+		Id:          mssqldb.DatabaseRoleType,
+		DisplayName: "Database Role",
+		Traits:      []v2.ResourceType_Trait{v2.ResourceType_TRAIT_ROLE},
+	}
+
+	resourceTypeDatabaseUser = &v2.ResourceType{
+		Id:          mssqldb.DatabaseUserType,
+		DisplayName: "Database User",
+		Traits:      []v2.ResourceType_Trait{v2.ResourceType_TRAIT_USER},
 	}
 )
