@@ -16,6 +16,7 @@ type UserModel struct {
 	SecurityID string `db:"sid"`
 	Name       string `db:"name"`
 	Type       string `db:"type_desc"`
+	IsDisabled bool   `db:"is_disabled"`
 }
 
 func (c *Client) ListServerUserPrincipals(ctx context.Context, pager *Pager) ([]*UserModel, string, error) {
@@ -36,7 +37,8 @@ SELECT
   principal_id,
   sid,
   name, 
-  type_desc
+  type_desc,
+  is_disabled
 FROM 
   sys.server_principals
 WHERE 

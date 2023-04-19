@@ -73,7 +73,7 @@ func (d *serverSyncer) List(ctx context.Context, parentResourceID *v2.ResourceId
 		d.ResourceType(ctx),
 		server.Name,
 		resource.WithAnnotation(
-			&v2.ChildResourceType{ResourceTypeId: resourceTypeEndpoint.Id},
+			// &v2.ChildResourceType{ResourceTypeId: resourceTypeEndpoint.Id},
 			&v2.ChildResourceType{ResourceTypeId: resourceTypeDatabase.Id},
 			&v2.ChildResourceType{ResourceTypeId: resourceTypeUser.Id},
 			&v2.ChildResourceType{ResourceTypeId: resourceTypeServerRole.Id},

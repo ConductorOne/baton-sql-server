@@ -40,11 +40,16 @@ func (d *userPrincipalSyncer) List(ctx context.Context, parentResourceID *v2.Res
 
 	var ret []*v2.Resource
 	for _, principalModel := range principals {
+		status := v2.UserTrait_Status_STATUS_ENABLED
+		if principalModel.IsDisabled {
+			status = v2.UserTrait_Status_STATUS_DISABLED
+		}
+
 		r, err := resource.NewUserResource(
 			principalModel.Name,
 			d.ResourceType(ctx),
 			principalModel.ID,
-			nil,
+			[]resource.UserTraitOption{resource.WithStatus(status)},
 			resource.WithParentResourceID(parentResourceID),
 		)
 		if err != nil {

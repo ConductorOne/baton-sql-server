@@ -38,10 +38,7 @@ func (o *Mssqldb) Validate(ctx context.Context) (annotations.Annotations, error)
 func (o *Mssqldb) ResourceSyncers(ctx context.Context) []connectorbuilder.ResourceSyncer {
 	return []connectorbuilder.ResourceSyncer{
 		newServerSyncer(ctx, o.client),
-		newEndpointSyncer(ctx, o.client),
 		newDatabaseSyncer(ctx, o.client),
-		newSchemaSyncer(ctx, o.client),
-		newTableSyncer(ctx, o.client),
 		newUserPrincipalSyncer(ctx, o.client),
 		newServerRolePrincipalSyncer(ctx, o.client),
 		newDatabaseRolePrincipalSyncer(ctx, o.client),
