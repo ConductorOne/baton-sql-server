@@ -63,13 +63,13 @@ func (d *serverRolePrincipalSyncer) Entitlements(ctx context.Context, resource *
 	return ret, "", nil, nil
 }
 
-type grantPaging struct {
+type roleGrantPaging struct {
 	PageToken   string          `json:"page_token"`
 	NestedRoles map[string]bool `json:"nested_roles"`
 }
 
 func (d *serverRolePrincipalSyncer) loadGrantPaging(token *pagination.Token) (*pagination.Bag, map[string]bool, error) {
-	gPaging := grantPaging{}
+	gPaging := roleGrantPaging{}
 
 	if token != nil && token.Token != "" {
 		err := json.Unmarshal([]byte(token.Token), &gPaging)
@@ -104,7 +104,7 @@ func (d *serverRolePrincipalSyncer) saveGrantPaging(bag *pagination.Bag, visited
 		return "", nil
 	}
 
-	gPaging := grantPaging{
+	gPaging := roleGrantPaging{
 		PageToken:   bagToken,
 		NestedRoles: visited,
 	}
@@ -176,7 +176,7 @@ func (d *serverRolePrincipalSyncer) Grants(ctx context.Context, resource *v2.Res
 			ret = append(ret, grTypes.NewGrant(resource, "member", principalID))
 		}
 
-		visited[resource.Id.Resource] = true
+		visited[b.ResourceID()] = true
 
 	default:
 		return nil, "", nil, fmt.Errorf("unexpected pagination state")

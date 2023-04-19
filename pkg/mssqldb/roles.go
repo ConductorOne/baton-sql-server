@@ -2,10 +2,12 @@ package mssqldb
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 	"strings"
 
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
+	"go.uber.org/zap"
 )
 
 const ServerRoleType = "server-role"
@@ -134,7 +136,7 @@ ORDER BY
 	return ret, nextPageToken, nil
 }
 
-func (c *Client) ListDatabaseRolePrincipals(ctx context.Context, dbName string, pager *Pager) ([]*RoleModel, string, error) {
+func (c *Client) ListDatabaseRoles(ctx context.Context, dbName string, pager *Pager) ([]*RoleModel, string, error) {
 	l := ctxzap.Extract(ctx)
 	l.Debug("listing database role principals")
 
@@ -174,6 +176,66 @@ ORDER BY
 			return nil, "", err
 		}
 		ret = append(ret, &roleModel)
+	}
+	if rows.Err() != nil {
+		return nil, "", rows.Err()
+	}
+
+	var nextPageToken string
+	if len(ret) > limit {
+		offset += limit
+		nextPageToken = strconv.Itoa(offset)
+		ret = ret[:limit]
+	}
+
+	return ret, nextPageToken, nil
+}
+
+func (c *Client) ListDatabaseRolePrincipals(ctx context.Context, dbName string, databaseRoleID string, pager *Pager) ([]*RolePrincipalModel, string, error) {
+	l := ctxzap.Extract(ctx)
+	l.Debug("listing database role members", zap.String("database_role_id", databaseRoleID), zap.String("database_name", dbName))
+
+	offset, limit, err := pager.Parse()
+	if err != nil {
+		return nil, "", err
+	}
+	args := []interface{}{databaseRoleID, offset, limit + 1}
+
+	query := fmt.Sprintf(
+		`SELECT
+	%s.sys.database_principals.principal_id,
+		%s.sys.database_principals.name,
+		%s.sys.database_principals.type
+		FROM
+	%s.sys.database_principals
+	JOIN %s.sys.database_role_members ON %s.sys.database_role_members.member_principal_id = %s.sys.database_principals.principal_id
+	WHERE %s.sys.database_role_members.role_principal_id = @p1
+	ORDER BY %s.sys.database_principals.principal_id ASC OFFSET @p2 ROWS FETCH NEXT @p3 ROWS ONLY`,
+		dbName,
+		dbName,
+		dbName,
+		dbName,
+		dbName,
+		dbName,
+		dbName,
+		dbName,
+		dbName,
+	)
+
+	rows, err := c.db.QueryxContext(ctx, query, args...)
+	if err != nil {
+		return nil, "", err
+	}
+	defer rows.Close()
+
+	var ret []*RolePrincipalModel
+	for rows.Next() {
+		var rolePrincipalModel RolePrincipalModel
+		err = rows.StructScan(&rolePrincipalModel)
+		if err != nil {
+			return nil, "", err
+		}
+		ret = append(ret, &rolePrincipalModel)
 	}
 	if rows.Err() != nil {
 		return nil, "", rows.Err()
