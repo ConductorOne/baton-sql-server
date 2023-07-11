@@ -2,14 +2,20 @@ package mssqldb
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"strconv"
 	"strings"
 
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
 )
 
-const UserType = "user"
-const DatabaseUserType = "database-user"
+const (
+	UserType         = "user"
+	DatabaseUserType = "database-user"
+)
+
+var ErrNoServerPrincipal = errors.New("no server principal found")
 
 type UserModel struct {
 	ID         string `db:"principal_id"`
@@ -82,9 +88,46 @@ ORDER BY
 	return ret, nextPageToken, nil
 }
 
+// GetServerPrincipalForDatabasePrincipal returns the server principal for a given database user.
+// Returns ErrNoServerPrincipal if no server principal is found.
+func (c *Client) GetServerPrincipalForDatabasePrincipal(ctx context.Context, dbName string, principalID int64) (*UserModel, error) {
+	l := ctxzap.Extract(ctx)
+	l.Debug("getting server principal for database user")
+
+	var sb strings.Builder
+	sb.WriteString(`
+SELECT
+	principal_id,
+	sid,
+	name,
+	type_desc,
+	is_disabled
+FROM
+    sys.server_principals 
+WHERE sid = (SELECT sid FROM `)
+	sb.WriteString(dbName)
+	sb.WriteString(`.sys.database_principals WHERE principal_id = @p1)`)
+
+	row := c.db.QueryRowxContext(ctx, sb.String(), principalID)
+	if row.Err() != nil {
+		return nil, row.Err()
+	}
+
+	var ret UserModel
+	err := row.StructScan(&ret)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrNoServerPrincipal
+		}
+		return nil, err
+	}
+
+	return &ret, nil
+}
+
 func (c *Client) ListDatabaseUserPrincipals(ctx context.Context, dbName string, pager *Pager) ([]*UserModel, string, error) {
 	l := ctxzap.Extract(ctx)
-	l.Debug("listing databse user principals")
+	l.Debug("listing database user principals")
 
 	offset, limit, err := pager.Parse()
 	if err != nil {
