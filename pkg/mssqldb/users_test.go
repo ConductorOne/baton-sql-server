@@ -18,7 +18,7 @@ func TestClient_GetServerPrincipalForDatabaseUser(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, u)
 
-	u, err = c.GetServerPrincipalForDatabasePrincipal(ctx, "master", 77)
+	_, err = c.GetServerPrincipalForDatabasePrincipal(ctx, "master", 77)
 	require.Error(t, err)
 	require.ErrorIs(t, err, ErrNoServerPrincipal)
 }
