@@ -6,6 +6,20 @@ It uses [go-mssqldb](https://github.com/microsoft/go-mssqldb) to connect to SQL 
 Check out [Baton](https://github.com/conductorone/baton) to learn more the project in general.
 
 # Getting Started
+This connector requires that you connect to your  SQL Server instance with a user with the proper access to read the system tables. The following permissions are required:
+    - `VIEW ANY DEFINITION` on the server
+    - `VIEW ANY DATABASE` on the server
+    - `VIEW ANY DEFINITION` on each database
+    - `VIEW SERVER STATE` on the server
+    - `VIEW DATABASE STATE` on each database
+
+The following tables are read while syncing data with this connector:
+    - `sys.server_principals`
+    - `sys.databases`
+    - `sys.server_permissions`
+    - `sys.server_role_members`
+    - `sys.database_principals` on each database
+    - `sys.database_role_members` on each database
 
 ## brew
 
