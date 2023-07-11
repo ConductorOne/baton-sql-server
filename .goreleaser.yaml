@@ -1,20 +1,29 @@
-project_name: baton-mssqldb
+project_name: baton-sql-server
 builds:
-  - binary: baton-mssqldb
+  - binary: baton-sql-server
     env:
       - CGO_ENABLED=0
     id: linux
-    main: ./cmd/baton-mssqldb
+    main: ./cmd/baton-sql-server
     goos:
       - linux
     goarch:
       - amd64
       - arm64
-  - binary: baton-mssqldb
+  - binary: baton-sql-server
+    env:
+      - CGO_ENABLED=0
+    id: windows
+    main: ./cmd/baton-sql-server
+    goos:
+      - windows
+    goarch:
+      - amd64
+  - binary: baton-sql-server
     env:
       - CGO_ENABLED=0
     id: macos-amd64
-    main: ./cmd/baton-mssqldb
+    main: ./cmd/baton-sql-server
     goos:
       - darwin
     goarch:
@@ -22,12 +31,12 @@ builds:
     hooks:
       post:
         - gon .gon-amd64.json
-        - mv dist/baton-mssqldb-darwin-amd64.signed.zip dist/macos-amd64_darwin_amd64_v1/baton-mssqldb
-  - binary: baton-mssqldb
+        - mv dist/baton-sql-server-darwin-amd64.signed.zip dist/macos-amd64_darwin_amd64_v1/baton-sql-server
+  - binary: baton-sql-server
     env:
       - CGO_ENABLED=0
     id: macos-arm64
-    main: ./cmd/baton-mssqldb
+    main: ./cmd/baton-sql-server
     goos:
       - darwin
     goarch:
@@ -35,12 +44,19 @@ builds:
     hooks:
       post:
         - gon .gon-arm64.json
-        - mv dist/baton-mssqldb-darwin-arm64.signed.zip dist/macos-arm64_darwin_arm64/baton-mssqldb
+        - mv dist/baton-sql-server-darwin-arm64.signed.zip dist/macos-arm64_darwin_arm64/baton-sql-server
 archives:
   - id: linux-archive
     builds:
       - linux
     format: tar.gz
+    name_template: "{{ .ProjectName }}-v{{ .Version }}-{{ .Os }}-{{ .Arch }}"
+    files:
+      - none*
+  - id: windows-archive
+    builds:
+      - windows
+    format: zip
     name_template: "{{ .ProjectName }}-v{{ .Version }}-{{ .Os }}-{{ .Arch }}"
     files:
       - none*
@@ -56,11 +72,13 @@ release:
   ids:
     - linux-archive
     - darwin-archive
+    - windows-archive
 snapshot:
   name_template: "{{ incpatch .Version }}-dev"
 checksum:
   ids:
     - linux-archive
+    - windows-archive
   extra_files:
     - glob: ./dist/*-darwin-amd64.zip
     - glob: ./dist/*-darwin-arm64.zip
@@ -71,9 +89,9 @@ brews:
     folder: Formula
     homepage: https://conductorone.com
     test: |
-      system "#{bin}/baton-mssqldb -v"
+      system "#{bin}/baton-sql-server -v"
     install: |-
-      bin.install "baton-mssqldb"
+      bin.install "baton-sql-server"
 changelog:
   filters:
     exclude:

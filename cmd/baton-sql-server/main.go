@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/ConductorOne/baton-mssqldb/pkg/connector"
 	"github.com/conductorone/baton-sdk/pkg/cli"
 	"github.com/conductorone/baton-sdk/pkg/connectorbuilder"
 	"github.com/conductorone/baton-sdk/pkg/types"
+	"github.com/conductorone/baton-sql-server/pkg/connector"
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
 	"go.uber.org/zap"
 )
@@ -19,14 +19,14 @@ func main() {
 	ctx := context.Background()
 
 	cfg := &config{}
-	cmd, err := cli.NewCmd(ctx, "baton-mssqldb", cfg, validateConfig, getConnector)
+	cmd, err := cli.NewCmd(ctx, "baton-sql-server", cfg, validateConfig, getConnector)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err.Error())
 		os.Exit(1)
 	}
 
 	cmd.Version = version
-	cmd.PersistentFlags().String("dsn", "", "The connection string for connecting to MS SQL ($BATON_DSN)")
+	cmd.PersistentFlags().String("dsn", "", "The connection string for connecting to SQL Server ($BATON_DSN)")
 
 	err = cmd.Execute()
 	if err != nil {

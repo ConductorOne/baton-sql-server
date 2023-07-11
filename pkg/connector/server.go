@@ -6,7 +6,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/ConductorOne/baton-mssqldb/pkg/mssqldb"
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/annotations"
 	_ "github.com/conductorone/baton-sdk/pkg/annotations"
@@ -14,6 +13,7 @@ import (
 	enTypes "github.com/conductorone/baton-sdk/pkg/types/entitlement"
 	grTypes "github.com/conductorone/baton-sdk/pkg/types/grant"
 	"github.com/conductorone/baton-sdk/pkg/types/resource"
+	"github.com/conductorone/baton-sql-server/pkg/mssqldb"
 )
 
 var serverPermissions = map[string]string{

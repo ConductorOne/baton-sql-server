@@ -1,13 +1,16 @@
 GOOS = $(shell go env GOOS)
 GOARCH = $(shell go env GOARCH)
 BUILD_DIR = dist/${GOOS}_${GOARCH}
-OUTPUT_PATH = ${BUILD_DIR}/baton-mssqldb
+
+ifeq ($(GOOS),windows)
+OUTPUT_PATH = ${BUILD_DIR}/baton-sql-server.exe
+else
+OUTPUT_PATH = ${BUILD_DIR}/baton-sql-server
+endif
 
 .PHONY: build
 build:
-	rm -f ${OUTPUT_PATH}
-	mkdir -p ${BUILD_DIR}
-	go build -o ${OUTPUT_PATH} ./cmd/baton-mssqldb
+	go build -o ${OUTPUT_PATH} ./cmd/baton-sql-server
 
 .PHONY: update-deps
 update-deps:
