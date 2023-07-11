@@ -6,19 +6,33 @@ It uses [go-mssqldb](https://github.com/microsoft/go-mssqldb) to connect to SQL 
 Check out [Baton](https://github.com/conductorone/baton) to learn more the project in general.
 
 # Getting Started
+This connector requires that you connect to your  SQL Server instance with a user with the proper access to read the system tables. The following permissions are required:
+    - `VIEW ANY DEFINITION` on the server
+    - `VIEW ANY DATABASE` on the server
+    - `VIEW ANY DEFINITION` on each database
+    - `VIEW SERVER STATE` on the server
+    - `VIEW DATABASE STATE` on each database
+
+The following tables are read while syncing data with this connector:
+    - `sys.server_principals`
+    - `sys.databases`
+    - `sys.server_permissions`
+    - `sys.server_role_members`
+    - `sys.database_principals` on each database
+    - `sys.database_role_members` on each database
 
 ## brew
 
 ```
 brew install conductorone/baton/baton conductorone/baton/baton-sql-server
-baton-sql-server --dsn "server=127.0.0.1;user id=sa;password=P@ssw0rd;port=1433" 
+baton-sql-server --dsn "server=127.0.0.1;user id=sa;password=devP@ssw0rd;port=1433" 
 baton resources
 ```
 
 ## docker
 
 ```
-docker run --rm -v $(pwd):/out -e BATON_DSN="server=127.0.0.1;user id=sa;password=P@ssw0rd;port=1433" ghcr.io/conductorone/baton-sql-server:latest -f "/out/sync.c1z"
+docker run --rm -v $(pwd):/out -e BATON_DSN="server=127.0.0.1;user id=sa;password=devP@ssw0rd;port=1433" ghcr.io/conductorone/baton-sql-server:latest -f "/out/sync.c1z"
 docker run --rm -v $(pwd):/out ghcr.io/conductorone/baton:latest -f "/out/sync.c1z" resources
 ```
 
@@ -27,7 +41,7 @@ docker run --rm -v $(pwd):/out ghcr.io/conductorone/baton:latest -f "/out/sync.c
 ```
 go install github.com/conductorone/baton/cmd/baton@main
 go install github.com/conductorone/baton-sql-server/cmd/baton-sql-server@main
-baton-sql-server --dsn "server=127.0.0.1;user id=sa;password=P@ssw0rd;port=1433" 
+baton-sql-server --dsn "server=127.0.0.1;user id=sa;password=devP@ssw0rd;port=1433" 
 baton resources
 ```
 
@@ -41,6 +55,16 @@ baton resources
 - Database Roles
 
 When fetching database permissions, the server principal backing the database principal will the resource that is granted entitlements.
+
+# Development
+
+A docker compose file is included to easily spin up a SQL Server instance for development. To start the instance, run:
+
+```
+docker-compose up -d
+```
+
+The instance will be available at `localhost:1433`. The default username is `sa` and the default password is `devP@ssw0rd`.
 
 # Contributing, Support, and Issues
 
