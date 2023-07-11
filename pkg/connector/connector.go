@@ -5,36 +5,64 @@ import (
 	"fmt"
 
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
+	"github.com/conductorone/baton-sdk/pkg/annotations"
+	_ "github.com/conductorone/baton-sdk/pkg/annotations"
+	"github.com/conductorone/baton-sdk/pkg/connectorbuilder"
+	"github.com/conductorone/baton-sql-server/pkg/mssqldb"
 )
 
-// TODO: implement your connector here
-type connectorImpl struct {
+type Mssqldb struct {
+	client *mssqldb.Client
 }
 
-func (c *connectorImpl) ListResourceTypes(ctx context.Context, req *v2.ResourceTypesServiceListResourceTypesRequest) (*v2.ResourceTypesServiceListResourceTypesResponse, error) {
-	return nil, fmt.Errorf("not implemented")
+// Resource model:
+// Server
+// |-- Principals (User, Group, Role)
+//    |-- Permissions
+// |-- Databases
+//    |-- Principals
+//    |-- Users
+
+func (o *Mssqldb) Metadata(ctx context.Context) (*v2.ConnectorMetadata, error) {
+	var annos annotations.Annotations
+
+	serverInfo, err := o.client.GetServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return &v2.ConnectorMetadata{
+		DisplayName: fmt.Sprintf("Microsoft SQL Server (%s)", serverInfo.Name),
+		Annotations: annos,
+	}, nil
 }
 
-func (c *connectorImpl) ListResources(ctx context.Context, req *v2.ResourcesServiceListResourcesRequest) (*v2.ResourcesServiceListResourcesResponse, error) {
-	return nil, fmt.Errorf("not implemented")
+func (o *Mssqldb) Validate(ctx context.Context) (annotations.Annotations, error) {
+	_, err := o.client.GetServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return nil, nil
 }
 
-func (c *connectorImpl) ListEntitlements(ctx context.Context, req *v2.EntitlementsServiceListEntitlementsRequest) (*v2.EntitlementsServiceListEntitlementsResponse, error) {
-	return nil, fmt.Errorf("not implemented")
+func (o *Mssqldb) ResourceSyncers(ctx context.Context) []connectorbuilder.ResourceSyncer {
+	return []connectorbuilder.ResourceSyncer{
+		newServerSyncer(ctx, o.client),
+		newDatabaseSyncer(ctx, o.client),
+		newUserPrincipalSyncer(ctx, o.client),
+		newServerRolePrincipalSyncer(ctx, o.client),
+		newDatabaseRolePrincipalSyncer(ctx, o.client),
+		newGroupPrincipalSyncer(ctx, o.client),
+	}
 }
 
-func (c *connectorImpl) ListGrants(ctx context.Context, req *v2.GrantsServiceListGrantsRequest) (*v2.GrantsServiceListGrantsResponse, error) {
-	return nil, fmt.Errorf("not implemented")
-}
-
-func (c *connectorImpl) GetMetadata(ctx context.Context, req *v2.ConnectorServiceGetMetadataRequest) (*v2.ConnectorServiceGetMetadataResponse, error) {
-	return nil, fmt.Errorf("not implemented")
-}
-
-func (c *connectorImpl) Validate(ctx context.Context, req *v2.ConnectorServiceValidateRequest) (*v2.ConnectorServiceValidateResponse, error) {
-	return nil, fmt.Errorf("not implemented")
-}
-
-func (c *connectorImpl) GetAsset(req *v2.AssetServiceGetAssetRequest, server v2.AssetService_GetAssetServer) error {
-	return fmt.Errorf("not implemented")
+func New(ctx context.Context, dsn string) (*Mssqldb, error) {
+	c, err := mssqldb.New(ctx, dsn)
+	if err != nil {
+		return nil, err
+	}
+	return &Mssqldb{
+		client: c,
+	}, nil
 }

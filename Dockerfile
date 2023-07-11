@@ -1,3 +1,3 @@
 FROM gcr.io/distroless/static-debian11:nonroot
-ENTRYPOINT ["/baton-mssqldb"]
-COPY baton-mssqldb /
+ENTRYPOINT ["/baton-sql-server"]
+COPY baton-sql-server /
