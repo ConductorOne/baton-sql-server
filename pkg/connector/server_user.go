@@ -2,6 +2,7 @@ package connector
 
 import (
 	"context"
+	"net/mail"
 
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/annotations"
@@ -45,11 +46,17 @@ func (d *userPrincipalSyncer) List(ctx context.Context, parentResourceID *v2.Res
 			status = v2.UserTrait_Status_STATUS_DISABLED
 		}
 
+		userOpts := []resource.UserTraitOption{resource.WithStatus(status)}
+
+		if _, err = mail.ParseAddress(principalModel.Name); err == nil {
+			userOpts = append(userOpts, resource.WithEmail(principalModel.Name, true))
+		}
+
 		r, err := resource.NewUserResource(
 			principalModel.Name,
 			d.ResourceType(ctx),
 			principalModel.ID,
-			[]resource.UserTraitOption{resource.WithStatus(status)},
+			userOpts,
 			resource.WithParentResourceID(parentResourceID),
 		)
 		if err != nil {
