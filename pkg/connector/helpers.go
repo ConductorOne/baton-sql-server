@@ -26,7 +26,7 @@ func resourceTypeFromDatabasePrincipal(pType string) (*v2.ResourceType, error) {
 	case "G", "X":
 		return resourceTypeGroup, nil
 	case "S", "U", "C", "E", "K":
-		return resourceTypeDatabaseUser, nil
+		return resourceTypeUser, nil
 	default:
 		return nil, fmt.Errorf("unknown principal type: %s", pType)
 	}

@@ -10,7 +10,7 @@ import (
 
 type PermissionModel struct {
 	PrincipalName string `db:"principal_name"`
-	PrincipalID   string `db:"principal_id"`
+	PrincipalID   int64  `db:"principal_id"`
 	PrincipalType string `db:"principal_type"`
 	State         string `db:"state"`
 	Permissions   string `db:"perms"`

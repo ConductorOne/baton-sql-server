@@ -3,6 +3,7 @@ package connector
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/ConductorOne/baton-mssqldb/pkg/mssqldb"
@@ -132,12 +133,12 @@ func (d *serverSyncer) Grants(ctx context.Context, resource *v2.Resource, pToken
 				case "G":
 					ret = append(ret, grTypes.NewGrant(resource, perm, &v2.ResourceId{
 						ResourceType: rt.Id,
-						Resource:     p.PrincipalID,
+						Resource:     strconv.FormatInt(p.PrincipalID, 10),
 					}))
 				case "W":
 					ret = append(ret, grTypes.NewGrant(resource, perm+"-grant", &v2.ResourceId{
 						ResourceType: rt.Id,
-						Resource:     p.PrincipalID,
+						Resource:     strconv.FormatInt(p.PrincipalID, 10),
 					}))
 				}
 			}

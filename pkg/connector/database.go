@@ -2,6 +2,7 @@ package connector
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -14,6 +15,8 @@ import (
 	enTypes "github.com/conductorone/baton-sdk/pkg/types/entitlement"
 	grTypes "github.com/conductorone/baton-sdk/pkg/types/grant"
 	"github.com/conductorone/baton-sdk/pkg/types/resource"
+	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
+	"go.uber.org/zap"
 )
 
 type databaseSyncer struct {
@@ -120,7 +123,7 @@ func (d *databaseSyncer) List(ctx context.Context, parentResourceID *v2.Resource
 			d.ResourceType(ctx),
 			dbModel.ID,
 			resource.WithAnnotation(&v2.ChildResourceType{ResourceTypeId: resourceTypeDatabaseRole.Id}),
-			resource.WithAnnotation(&v2.ChildResourceType{ResourceTypeId: resourceTypeDatabaseUser.Id}),
+			// resource.WithAnnotation(&v2.ChildResourceType{ResourceTypeId: resourceTypeDatabaseUser.Id}),
 		)
 		if err != nil {
 			return nil, "", nil, err
@@ -135,13 +138,21 @@ func (d *databaseSyncer) Entitlements(ctx context.Context, resource *v2.Resource
 	var ret []*v2.Entitlement
 
 	for key, name := range databasePermissions {
-		ret = append(ret, &v2.Entitlement{
-			Id:          enTypes.NewEntitlementID(resource, key),
-			DisplayName: name,
-			Slug:        name,
-			Purpose:     v2.Entitlement_PURPOSE_VALUE_PERMISSION,
-			Resource:    resource,
-		})
+		ret = append(ret,
+			&v2.Entitlement{
+				Id:          enTypes.NewEntitlementID(resource, key),
+				DisplayName: name,
+				Slug:        name,
+				Purpose:     v2.Entitlement_PURPOSE_VALUE_PERMISSION,
+				Resource:    resource,
+			},
+			&v2.Entitlement{
+				Id:          enTypes.NewEntitlementID(resource, key+"-grant"),
+				DisplayName: fmt.Sprintf("Grant %s", name),
+				Slug:        fmt.Sprintf("Grant %s", name),
+				Purpose:     v2.Entitlement_PURPOSE_VALUE_PERMISSION,
+				Resource:    resource,
+			})
 	}
 
 	return ret, "", nil, nil
@@ -149,6 +160,8 @@ func (d *databaseSyncer) Entitlements(ctx context.Context, resource *v2.Resource
 
 func (d *databaseSyncer) Grants(ctx context.Context, resource *v2.Resource, pToken *pagination.Token) ([]*v2.Grant, string, annotations.Annotations, error) {
 	var ret []*v2.Grant
+
+	l := ctxzap.Extract(ctx)
 
 	dbID, err := strconv.ParseInt(resource.Id.Resource, 10, 64)
 	if err != nil {
@@ -171,16 +184,34 @@ func (d *databaseSyncer) Grants(ctx context.Context, resource *v2.Resource, pTok
 			if _, ok := databasePermissions[perm]; ok {
 				rt, err := resourceTypeFromDatabasePrincipal(p.PrincipalType)
 				if err != nil {
-					return nil, "", nil, err
+					l.Error("unexpected principal type", zap.String("principal_type", p.PrincipalType))
+					continue
 				}
 
-				resourceID := &v2.ResourceId{
-					ResourceType: rt.Id,
-					Resource:     fmt.Sprintf("%s:%s", db.Name, p.PrincipalID),
-				}
+				var resourceID *v2.ResourceId
+				switch rt.Id {
+				case resourceTypeUser.Id, resourceTypeGroup.Id:
+					serverPrincipal, err := d.client.GetServerPrincipalForDatabasePrincipal(ctx, db.Name, p.PrincipalID)
+					if err != nil {
+						if errors.Is(err, mssqldb.ErrNoServerPrincipal) {
+							l.Debug("no server principal for database principal", zap.String("user", p.PrincipalName))
+							continue
+						}
+						return nil, "", nil, err
+					}
 
-				if rt.Id == resourceTypeDatabaseRole.Id {
-					resourceID.Resource = fmt.Sprintf("%s:%s", db.Name, p.PrincipalID)
+					resourceID = &v2.ResourceId{
+						ResourceType: rt.Id,
+						Resource:     serverPrincipal.ID,
+					}
+
+				case resourceTypeDatabaseRole.Id:
+					resourceID = &v2.ResourceId{
+						ResourceType: rt.Id,
+						Resource:     fmt.Sprintf("%s:%d", db.Name, p.PrincipalID),
+					}
+				default:
+					return nil, "", nil, fmt.Errorf("unexpected resource type: %s", rt.Id)
 				}
 
 				switch p.State {
@@ -189,6 +220,9 @@ func (d *databaseSyncer) Grants(ctx context.Context, resource *v2.Resource, pTok
 						Id: resourceID,
 					}))
 				case "W":
+					ret = append(ret, grTypes.NewGrant(resource, perm, &v2.Resource{
+						Id: resourceID,
+					}))
 					ret = append(ret, grTypes.NewGrant(resource, perm+"-grant", &v2.Resource{
 						Id: resourceID,
 					}))

@@ -47,10 +47,4 @@ var (
 		DisplayName: "Database Role",
 		Traits:      []v2.ResourceType_Trait{v2.ResourceType_TRAIT_ROLE},
 	}
-
-	resourceTypeDatabaseUser = &v2.ResourceType{
-		Id:          mssqldb.DatabaseUserType,
-		DisplayName: "Database User",
-		Traits:      []v2.ResourceType_Trait{v2.ResourceType_TRAIT_USER},
-	}
 )

@@ -42,7 +42,6 @@ func (o *Mssqldb) ResourceSyncers(ctx context.Context) []connectorbuilder.Resour
 		newUserPrincipalSyncer(ctx, o.client),
 		newServerRolePrincipalSyncer(ctx, o.client),
 		newDatabaseRolePrincipalSyncer(ctx, o.client),
-		newDatabaseUserPrincipalSyncer(ctx, o.client),
 		newGroupPrincipalSyncer(ctx, o.client),
 	}
 }

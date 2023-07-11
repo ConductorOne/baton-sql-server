@@ -8,7 +8,6 @@ import (
 	"github.com/conductorone/baton-sdk/pkg/annotations"
 	_ "github.com/conductorone/baton-sdk/pkg/annotations"
 	"github.com/conductorone/baton-sdk/pkg/pagination"
-	enTypes "github.com/conductorone/baton-sdk/pkg/types/entitlement"
 	"github.com/conductorone/baton-sdk/pkg/types/resource"
 )
 
@@ -33,7 +32,7 @@ func (d *groupPrincipalSyncer) List(ctx context.Context, parentResourceID *v2.Re
 
 	var ret []*v2.Resource
 	for _, principalModel := range principals {
-		r, err := resource.NewGroupResource(
+		r, err := resource.NewUserResource(
 			principalModel.Name,
 			d.ResourceType(ctx),
 			principalModel.ID,
@@ -50,11 +49,7 @@ func (d *groupPrincipalSyncer) List(ctx context.Context, parentResourceID *v2.Re
 }
 
 func (d *groupPrincipalSyncer) Entitlements(ctx context.Context, resource *v2.Resource, pToken *pagination.Token) ([]*v2.Entitlement, string, annotations.Annotations, error) {
-	var ret []*v2.Entitlement
-
-	ret = append(ret, enTypes.NewAssignmentEntitlement(resource, "member"))
-
-	return ret, "", nil, nil
+	return nil, "", nil, nil
 }
 
 func (d *groupPrincipalSyncer) Grants(ctx context.Context, resource *v2.Resource, pToken *pagination.Token) ([]*v2.Grant, string, annotations.Annotations, error) {
