@@ -10,22 +10,9 @@ var (
 		Id:          mssqldb.ServerType,
 		DisplayName: "Server",
 	}
-	resourceTypeEndpoint = &v2.ResourceType{
-		Id:          mssqldb.EndpointType,
-		DisplayName: "Endpoint",
-	}
 	resourceTypeDatabase = &v2.ResourceType{
 		Id:          mssqldb.DatabaseType,
 		DisplayName: "Database",
-	}
-
-	resourceTypeSchema = &v2.ResourceType{
-		Id:          mssqldb.SchemaType,
-		DisplayName: "Schema",
-	}
-	resourceTypeTable = &v2.ResourceType{
-		Id:          mssqldb.TableType,
-		DisplayName: "Table",
 	}
 	resourceTypeUser = &v2.ResourceType{
 		Id:          mssqldb.UserType,

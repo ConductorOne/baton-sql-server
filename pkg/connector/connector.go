@@ -2,6 +2,7 @@ package connector
 
 import (
 	"context"
+	"fmt"
 
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/annotations"
@@ -25,13 +26,23 @@ type Mssqldb struct {
 func (o *Mssqldb) Metadata(ctx context.Context) (*v2.ConnectorMetadata, error) {
 	var annos annotations.Annotations
 
+	serverInfo, err := o.client.GetServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	return &v2.ConnectorMetadata{
-		DisplayName: "Microsoft SQL Server",
+		DisplayName: fmt.Sprintf("Microsoft SQL Server (%s)", serverInfo.Name),
 		Annotations: annos,
 	}, nil
 }
 
 func (o *Mssqldb) Validate(ctx context.Context) (annotations.Annotations, error) {
+	_, err := o.client.GetServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	return nil, nil
 }
 

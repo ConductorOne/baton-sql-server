@@ -39,7 +39,7 @@ func (c *Client) ListServerRolePrincipals(ctx context.Context, serverRoleID stri
 	var sb strings.Builder
 	// Fetch the role principals.
 	// https://learn.microsoft.com/en-us/sql/relational-databases/system-catalog-views/sys-server-principals-transact-sql
-	sb.WriteString(`
+	_, _ = sb.WriteString(`
 SELECT 
   sys.server_principals.principal_id,
   sys.server_principals.name, 
@@ -94,7 +94,7 @@ func (c *Client) ListServerRoles(ctx context.Context, pager *Pager) ([]*RoleMode
 	var sb strings.Builder
 	// Fetch the role principals.
 	// https://learn.microsoft.com/en-us/sql/relational-databases/system-catalog-views/sys-server-principals-transact-sql
-	sb.WriteString(`
+	_, _ = sb.WriteString(`
 SELECT 
   principal_id,
   sid,
@@ -148,15 +148,15 @@ func (c *Client) ListDatabaseRoles(ctx context.Context, dbName string, pager *Pa
 
 	var sb strings.Builder
 	// Fetch the database role principals.
-	sb.WriteString(`
+	_, _ = sb.WriteString(`
 SELECT 
   principal_id,
   sid,
   name, 
   type_desc 
 FROM `)
-	sb.WriteString(dbName)
-	sb.WriteString(`.sys.database_principals 
+	_, _ = sb.WriteString(dbName)
+	_, _ = sb.WriteString(`.sys.database_principals 
 WHERE type = 'R'
 ORDER BY 
   principal_id ASC OFFSET @p1 ROWS FETCH NEXT @p2 ROWS ONLY

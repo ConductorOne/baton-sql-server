@@ -38,7 +38,7 @@ func (c *Client) ListServerUserPrincipals(ctx context.Context, pager *Pager) ([]
 	var sb strings.Builder
 	// Fetch the user principals.
 	// https://learn.microsoft.com/en-us/sql/relational-databases/system-catalog-views/sys-server-principals-transact-sql
-	sb.WriteString(`
+	_, _ = sb.WriteString(`
 SELECT 
   principal_id,
   sid,
@@ -95,7 +95,7 @@ func (c *Client) GetServerPrincipalForDatabasePrincipal(ctx context.Context, dbN
 	l.Debug("getting server principal for database user")
 
 	var sb strings.Builder
-	sb.WriteString(`
+	_, _ = sb.WriteString(`
 SELECT
 	principal_id,
 	sid,
@@ -105,8 +105,8 @@ SELECT
 FROM
     sys.server_principals 
 WHERE sid = (SELECT sid FROM `)
-	sb.WriteString(dbName)
-	sb.WriteString(`.sys.database_principals WHERE principal_id = @p1)`)
+	_, _ = sb.WriteString(dbName)
+	_, _ = sb.WriteString(`.sys.database_principals WHERE principal_id = @p1)`)
 
 	row := c.db.QueryRowxContext(ctx, sb.String(), principalID)
 	if row.Err() != nil {
@@ -136,14 +136,14 @@ func (c *Client) ListDatabaseUserPrincipals(ctx context.Context, dbName string, 
 	args := []interface{}{offset, limit + 1}
 
 	var sb strings.Builder
-	sb.WriteString(`
+	_, _ = sb.WriteString(`
 SELECT 
   principal_id,
   name, 
   type_desc
 FROM `)
-	sb.WriteString(dbName)
-	sb.WriteString(`.sys.database_principals
+	_, _ = sb.WriteString(dbName)
+	_, _ = sb.WriteString(`.sys.database_principals
 WHERE 
   (
     type = 'S' 

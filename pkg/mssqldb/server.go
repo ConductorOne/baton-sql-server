@@ -18,7 +18,7 @@ func (c *Client) GetServer(ctx context.Context) (*ServerModel, error) {
 	l.Debug("listing server info")
 
 	var sb strings.Builder
-	sb.WriteString(`SELECT SERVERPROPERTY('ServerName') AS [ServerName]`)
+	_, _ = sb.WriteString(`SELECT SERVERPROPERTY('ServerName') AS [ServerName]`)
 
 	row := c.db.QueryRowxContext(ctx, sb.String())
 	if row.Err() != nil {

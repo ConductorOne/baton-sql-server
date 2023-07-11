@@ -30,7 +30,7 @@ func (c *Client) ListGroupPrincipals(ctx context.Context, pager *Pager) ([]*Grou
 	var sb strings.Builder
 	// Fetch the group principals.
 	// https://learn.microsoft.com/en-us/sql/relational-databases/system-catalog-views/sys-server-principals-transact-sql
-	sb.WriteString(`
+	_, _ = sb.WriteString(`
 SELECT 
   principal_id, 
   sid,

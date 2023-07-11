@@ -21,7 +21,7 @@ func (c *Client) GetDatabase(ctx context.Context, id int64) (*DbModel, error) {
 	l.Debug("fetching database", zap.Int64("database_id", id))
 
 	var sb strings.Builder
-	sb.WriteString(`SELECT name, database_id FROM sys.databases WHERE database_id=@p1`)
+	_, _ = sb.WriteString(`SELECT name, database_id FROM sys.databases WHERE database_id=@p1`)
 
 	row := c.db.QueryRowxContext(ctx, sb.String(), id)
 	if row.Err() != nil {
@@ -48,7 +48,7 @@ func (c *Client) ListDatabases(ctx context.Context, pager *Pager) ([]*DbModel, s
 	args := []interface{}{offset, limit + 1}
 
 	var sb strings.Builder
-	sb.WriteString(`SELECT name, database_id FROM sys.databases
+	_, _ = sb.WriteString(`SELECT name, database_id FROM sys.databases
                                       ORDER BY database_id ASC 
                                       OFFSET @p1 ROWS
                                       FETCH NEXT @p2 ROWS ONLY`)
