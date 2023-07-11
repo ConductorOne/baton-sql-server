@@ -3,6 +3,7 @@ package connector
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -169,31 +170,50 @@ func (d *databaseRolePrincipalSyncer) Grants(
 			return nil, "", nil, err
 		}
 
-		for _, principal := range principals {
-			var rt *v2.ResourceType
+		for _, dbPrincipal := range principals {
+			var principalID *v2.ResourceId
 
-			switch principal.Type {
-			case "S", "E", "K", "C", "U":
-				rt = resourceTypeDatabaseUser
-			case "X", "G":
-				rt = resourceTypeGroup
+			switch dbPrincipal.Type {
+			case "S", "E", "K", "C", "U", "X", "G":
+				serverPrincipal, err := d.client.GetServerPrincipalForDatabasePrincipal(ctx, idParts[0], dbPrincipal.ID)
+				if err != nil {
+					if errors.Is(err, mssqldb.ErrNoServerPrincipal) {
+						l.Debug("no server principal for database principal", zap.String("user", dbPrincipal.Name), zap.String("role_id", b.ResourceID()))
+						continue
+					}
+					return nil, "", nil, err
+				}
+
+				rt := resourceTypeUser
+
+				if dbPrincipal.Type == "G" || dbPrincipal.Type == "X" {
+					rt = resourceTypeGroup
+				}
+
+				principalID, err = sdkResources.NewResourceID(rt, serverPrincipal.ID)
+				if err != nil {
+					return nil, "", nil, err
+				}
+
 			case "R":
-				rt = resourceTypeDatabaseRole
-				pID := strconv.FormatInt(principal.ID, 10)
+				pID := strconv.FormatInt(dbPrincipal.ID, 10)
 				if _, ok := visited[pID]; !ok {
 					b.Push(pagination.PageState{
 						ResourceTypeID: resourceTypeDatabaseRole.Id,
 						ResourceID:     fmt.Sprintf("%s:%s", idParts[0], pID),
 					})
 				}
+				principalID, err = sdkResources.NewResourceID(resourceTypeDatabaseRole, fmt.Sprintf("%s:%d", idParts[0], dbPrincipal.ID))
+				if err != nil {
+					return nil, "", nil, err
+				}
 			default:
-				l.Error("unknown principal type", zap.String("type", principal.Type), zap.Any("principal", principal), zap.String("role_id", b.ResourceID()))
+				l.Error("unknown db principal type", zap.String("type", dbPrincipal.Type), zap.Any("db_principal", dbPrincipal), zap.String("role_id", b.ResourceID()))
 				continue
 			}
 
-			principalID, err := sdkResources.NewResourceID(rt, fmt.Sprintf("%s:%d", idParts[0], principal.ID))
-			if err != nil {
-				return nil, "", nil, err
+			if principalID == nil {
+				return nil, "", nil, fmt.Errorf("invalid state: principalID is nil")
 			}
 
 			ret = append(ret, grTypes.NewGrant(resource, "member", principalID))
