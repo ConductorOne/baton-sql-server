@@ -32,10 +32,11 @@ var (
 		DisplayName: "User",
 		Traits:      []v2.ResourceType_Trait{v2.ResourceType_TRAIT_USER},
 	}
+	// Groups have a user trait because represent external group identities
 	resourceTypeGroup = &v2.ResourceType{
 		Id:          mssqldb.GroupType,
 		DisplayName: "Group",
-		Traits:      []v2.ResourceType_Trait{v2.ResourceType_TRAIT_GROUP},
+		Traits:      []v2.ResourceType_Trait{v2.ResourceType_TRAIT_USER},
 	}
 	resourceTypeServerRole = &v2.ResourceType{
 		Id:          mssqldb.ServerRoleType,

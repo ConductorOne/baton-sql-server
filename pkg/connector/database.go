@@ -138,6 +138,7 @@ func (d *databaseSyncer) Entitlements(ctx context.Context, resource *v2.Resource
 	var ret []*v2.Entitlement
 
 	for key, name := range databasePermissions {
+		grantSlug := fmt.Sprintf("%s (With Grant)", name)
 		ret = append(ret,
 			&v2.Entitlement{
 				Id:          enTypes.NewEntitlementID(resource, key),
@@ -148,8 +149,8 @@ func (d *databaseSyncer) Entitlements(ctx context.Context, resource *v2.Resource
 			},
 			&v2.Entitlement{
 				Id:          enTypes.NewEntitlementID(resource, key+"-grant"),
-				DisplayName: fmt.Sprintf("Grant %s", name),
-				Slug:        fmt.Sprintf("Grant %s", name),
+				DisplayName: grantSlug,
+				Slug:        grantSlug,
 				Purpose:     v2.Entitlement_PURPOSE_VALUE_PERMISSION,
 				Resource:    resource,
 			})
@@ -220,9 +221,6 @@ func (d *databaseSyncer) Grants(ctx context.Context, resource *v2.Resource, pTok
 						Id: resourceID,
 					}))
 				case "W":
-					ret = append(ret, grTypes.NewGrant(resource, perm, &v2.Resource{
-						Id: resourceID,
-					}))
 					ret = append(ret, grTypes.NewGrant(resource, perm+"-grant", &v2.Resource{
 						Id: resourceID,
 					}))
