@@ -34,6 +34,7 @@ func (o *Mssqldb) Metadata(ctx context.Context) (*v2.ConnectorMetadata, error) {
 	return &v2.ConnectorMetadata{
 		DisplayName: fmt.Sprintf("Microsoft SQL Server (%s)", serverInfo.Name),
 		Annotations: annos,
+		Description: "Baton connector for Microsoft SQL Server connector",
 	}, nil
 }
 
