@@ -4,19 +4,19 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/conductorone/baton-sdk/pkg/cli"
+	"github.com/conductorone/baton-sdk/pkg/field"
+	"github.com/spf13/viper"
 )
 
-// config defines the external configuration required for the connector to run.
-type config struct {
-	cli.BaseConfig `mapstructure:",squash"` // Puts the base config options in the same place as the connector options
-
-	Dsn string `mapstructure:"dsn"`
-}
+var (
+	dns = field.StringField("dns",
+		field.WithDescription("The connection string for connecting to SQL Server"),
+		field.WithRequired(true))
+)
 
 // validateConfig is run after the configuration is loaded, and should return an error if it isn't valid.
-func validateConfig(ctx context.Context, cfg *config) error {
-	if cfg.Dsn == "" {
+func validateConfig(_ context.Context, v *viper.Viper) error {
+	if v.GetString(dns.FieldName) == "" {
 		return fmt.Errorf("--dsn is required")
 	}
 
