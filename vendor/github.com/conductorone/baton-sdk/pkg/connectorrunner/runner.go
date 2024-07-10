@@ -3,9 +3,16 @@ package connectorrunner
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/signal"
 	"time"
+
+	"golang.org/x/sync/semaphore"
+
+	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
+	"go.uber.org/zap"
+	"google.golang.org/protobuf/types/known/durationpb"
 
 	v1 "github.com/conductorone/baton-sdk/pb/c1/connectorapi/baton/v1"
 	ratelimitV1 "github.com/conductorone/baton-sdk/pb/c1/ratelimit/v1"
@@ -13,11 +20,13 @@ import (
 	"github.com/conductorone/baton-sdk/pkg/tasks/c1api"
 	"github.com/conductorone/baton-sdk/pkg/tasks/local"
 	"github.com/conductorone/baton-sdk/pkg/types"
-	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
-	"go.uber.org/zap"
-	"google.golang.org/protobuf/types/known/durationpb"
 
 	"github.com/conductorone/baton-sdk/internal/connector"
+)
+
+const (
+	// taskConcurrency configures how many tasks we run concurrently.
+	taskConcurrency = 3
 )
 
 type connectorRunner struct {
@@ -46,11 +55,6 @@ func (c *connectorRunner) Run(ctx context.Context) error {
 		return err
 	}
 
-	err = c.Close(ctx)
-	if err != nil {
-		return err
-	}
-
 	return nil
 }
 
@@ -67,59 +71,135 @@ func (c *connectorRunner) handleContextCancel(ctx context.Context) error {
 		return nil
 	}
 
-	l.Debug("unexpected context cancellation", zap.Error(err))
+	l.Debug("runner: unexpected context cancellation", zap.Error(err))
 	return err
+}
+func (c *connectorRunner) processTask(ctx context.Context, task *v1.Task) error {
+	cc, err := c.cw.C(ctx)
+	if err != nil {
+		return fmt.Errorf("runner: error creating connector client: %w", err)
+	}
+
+	err = c.tasks.Process(ctx, task, cc)
+	if err != nil {
+		return fmt.Errorf("runner: error processing task: %w", err)
+	}
+
+	return nil
+}
+
+func (c *connectorRunner) backoff(ctx context.Context, errCount int) time.Duration {
+	waitDuration := time.Duration(errCount*errCount) * time.Second
+	if waitDuration > time.Minute {
+		waitDuration = time.Minute
+	}
+	return waitDuration
 }
 
 func (c *connectorRunner) run(ctx context.Context) error {
 	l := ctxzap.Extract(ctx)
 
-	var waitDuration time.Duration
-	var nextTask *v1.Task
+	sem := semaphore.NewWeighted(int64(taskConcurrency))
+
+	waitDuration := time.Second * 0
+	errCount := 0
 	var err error
 	for {
 		select {
 		case <-ctx.Done():
 			return c.handleContextCancel(ctx)
 		case <-time.After(waitDuration):
-		}
-
-		nextTask, waitDuration, err = c.tasks.Next(ctx)
-		if err != nil {
-			l.Error("error getting next task", zap.Error(err))
-			continue
-		}
-
-		if nextTask == nil {
-			l.Info("No tasks available. Waiting to check again.", zap.Duration("wait_duration", waitDuration))
-			if c.oneShot {
-				l.Debug("One-shot mode enabled. Exiting.")
-				return nil
+			l.Debug("runner: claiming worker")
+			// Acquire a worker slot before we call Next() so we don't claim a task before we can actually process it.
+			err = sem.Acquire(ctx, 1)
+			if err != nil {
+				// Any error returned from Acquire() is due to the context being cancelled.
+				sem.Release(1)
+				return c.handleContextCancel(ctx)
 			}
-			continue
-		}
+			l.Debug("runner: worker claimed, checking for next task")
 
-		cc, err := c.cw.C(ctx)
-		if err != nil {
-			l.Error("error getting connector client", zap.Error(err), zap.String("task_id", nextTask.GetId()))
-			continue
-		}
+			// Fetch the next task.
+			nextTask, nextWaitDuration, err := c.tasks.Next(ctx)
+			if err != nil {
+				// TODO(morgabra) Use a library with jitter for this?
+				errCount++
+				waitDuration = c.backoff(ctx, errCount)
+				l.Error("runner: error getting next task", zap.Error(err), zap.Int("err_count", errCount), zap.Duration("wait_duration", waitDuration))
+				sem.Release(1)
+				continue
+			}
 
-		err = c.tasks.Process(ctx, nextTask, cc)
-		if err != nil {
-			l.Error("error processing task", zap.Error(err), zap.String("task_id", nextTask.GetId()))
-			continue
-		}
+			errCount = 0
+			waitDuration = nextWaitDuration
 
-		l.Info("Task complete! Waiting before checking for more tasks...", zap.Duration("wait_duration", waitDuration))
+			// nil tasks mean there are no tasks to process.
+			if nextTask == nil {
+				sem.Release(1)
+				l.Debug("runner: no tasks to process", zap.Duration("wait_duration", waitDuration))
+				if c.oneShot {
+					l.Debug("runner: one-shot mode enabled. Exiting.")
+					return nil
+				}
+				continue
+			}
+
+			l.Debug("runner: got task", zap.String("task_id", nextTask.Id), zap.String("task_type", tasks.GetType(nextTask).String()))
+
+			// If we're in one-shot mode, process the task synchronously.
+			if c.oneShot {
+				l.Debug("runner: one-shot mode enabled. Performing action synchronously.")
+				err := c.processTask(ctx, nextTask)
+				sem.Release(1)
+				if err != nil {
+					l.Error(
+						"runner: error processing on-demand task",
+						zap.Error(err),
+						zap.String("task_id", nextTask.Id),
+						zap.String("task_type", tasks.GetType(nextTask).String()),
+					)
+					return err
+				}
+				continue
+			}
+
+			// We got a task, so process it concurrently.
+			go func(t *v1.Task) {
+				l.Debug("runner: starting processing task", zap.String("task_id", t.Id), zap.String("task_type", tasks.GetType(t).String()))
+				defer sem.Release(1)
+				err := c.processTask(ctx, t)
+				if err != nil {
+					l.Error("runner: error processing task", zap.Error(err), zap.String("task_id", t.Id), zap.String("task_type", tasks.GetType(t).String()))
+				}
+				l.Debug("runner: task processed", zap.String("task_id", t.Id), zap.String("task_type", tasks.GetType(t).String()))
+			}(nextTask)
+
+			l.Debug("runner: dispatched task, waiting for next task", zap.Duration("wait_duration", waitDuration))
+		}
 	}
 }
 
 func (c *connectorRunner) Close(ctx context.Context) error {
-	return nil
+	var retErr error
+
+	if err := c.cw.Close(); err != nil {
+		retErr = errors.Join(retErr, err)
+	}
+
+	return retErr
 }
 
 type Option func(ctx context.Context, cfg *runnerConfig) error
+
+type getTicketConfig struct {
+	ticketID string
+}
+
+type listTicketSchemasConfig struct{}
+
+type createTicketConfig struct {
+	templatePath string
+}
 
 type grantConfig struct {
 	entitlementID string
@@ -131,17 +211,44 @@ type revokeConfig struct {
 	grantID string
 }
 
+type createAccountConfig struct {
+	login string
+	email string
+}
+
+type deleteResourceConfig struct {
+	resourceId   string
+	resourceType string
+}
+
+type rotateCredentialsConfig struct {
+	resourceId   string
+	resourceType string
+}
+
+type eventStreamConfig struct {
+}
+
 type runnerConfig struct {
-	rlCfg               *ratelimitV1.RateLimiterConfig
-	rlDescriptors       []*ratelimitV1.RateLimitDescriptors_Entry
-	onDemand            bool
-	c1zPath             string
-	clientAuth          bool
-	clientID            string
-	clientSecret        string
-	provisioningEnabled bool
-	grantConfig         *grantConfig
-	revokeConfig        *revokeConfig
+	rlCfg                   *ratelimitV1.RateLimiterConfig
+	rlDescriptors           []*ratelimitV1.RateLimitDescriptors_Entry
+	onDemand                bool
+	c1zPath                 string
+	clientAuth              bool
+	clientID                string
+	clientSecret            string
+	provisioningEnabled     bool
+	ticketingEnabled        bool
+	grantConfig             *grantConfig
+	revokeConfig            *revokeConfig
+	eventFeedConfig         *eventStreamConfig
+	tempDir                 string
+	createAccountConfig     *createAccountConfig
+	deleteResourceConfig    *deleteResourceConfig
+	rotateCredentialsConfig *rotateCredentialsConfig
+	createTicketConfig      *createTicketConfig
+	listTicketSchemasConfig *listTicketSchemasConfig
+	getTicketConfig         *getTicketConfig
 }
 
 // WithRateLimiterConfig sets the RateLimiterConfig for a runner.
@@ -251,6 +358,42 @@ func WithOnDemandRevoke(c1zPath string, grantID string) Option {
 	}
 }
 
+func WithOnDemandCreateAccount(c1zPath string, login string, email string) Option {
+	return func(ctx context.Context, cfg *runnerConfig) error {
+		cfg.onDemand = true
+		cfg.c1zPath = c1zPath
+		cfg.createAccountConfig = &createAccountConfig{
+			login: login,
+			email: email,
+		}
+		return nil
+	}
+}
+
+func WithOnDemandDeleteResource(c1zPath string, resourceId string, resourceType string) Option {
+	return func(ctx context.Context, cfg *runnerConfig) error {
+		cfg.onDemand = true
+		cfg.c1zPath = c1zPath
+		cfg.deleteResourceConfig = &deleteResourceConfig{
+			resourceId:   resourceId,
+			resourceType: resourceType,
+		}
+		return nil
+	}
+}
+
+func WithOnDemandRotateCredentials(c1zPath string, resourceId string, resourceType string) Option {
+	return func(ctx context.Context, cfg *runnerConfig) error {
+		cfg.onDemand = true
+		cfg.c1zPath = c1zPath
+		cfg.rotateCredentialsConfig = &rotateCredentialsConfig{
+			resourceId:   resourceId,
+			resourceType: resourceType,
+		}
+		return nil
+	}
+}
+
 func WithOnDemandSync(c1zPath string) Option {
 	return func(ctx context.Context, cfg *runnerConfig) error {
 		cfg.onDemand = true
@@ -258,10 +401,59 @@ func WithOnDemandSync(c1zPath string) Option {
 		return nil
 	}
 }
+func WithOnDemandEventStream() Option {
+	return func(ctx context.Context, cfg *runnerConfig) error {
+		cfg.onDemand = true
+		cfg.eventFeedConfig = &eventStreamConfig{}
+		return nil
+	}
+}
 
 func WithProvisioningEnabled() Option {
 	return func(ctx context.Context, cfg *runnerConfig) error {
 		cfg.provisioningEnabled = true
+		return nil
+	}
+}
+
+func WithTicketingEnabled() Option {
+	return func(ctx context.Context, cfg *runnerConfig) error {
+		cfg.ticketingEnabled = true
+		return nil
+	}
+}
+
+func WithCreateTicket(templatePath string) Option {
+	return func(ctx context.Context, cfg *runnerConfig) error {
+		cfg.onDemand = true
+		cfg.createTicketConfig = &createTicketConfig{
+			templatePath: templatePath,
+		}
+		return nil
+	}
+}
+
+func WithListTicketSchemas() Option {
+	return func(ctx context.Context, cfg *runnerConfig) error {
+		cfg.onDemand = true
+		cfg.listTicketSchemasConfig = &listTicketSchemasConfig{}
+		return nil
+	}
+}
+
+func WithGetTicket(ticketID string) Option {
+	return func(ctx context.Context, cfg *runnerConfig) error {
+		cfg.onDemand = true
+		cfg.getTicketConfig = &getTicketConfig{
+			ticketID: ticketID,
+		}
+		return nil
+	}
+}
+
+func WithTempDir(tempDir string) Option {
+	return func(ctx context.Context, cfg *runnerConfig) error {
+		cfg.tempDir = tempDir
 		return nil
 	}
 }
@@ -289,6 +481,10 @@ func NewConnectorRunner(ctx context.Context, c types.ConnectorServer, opts ...Op
 		wrapperOpts = append(wrapperOpts, connector.WithProvisioningEnabled())
 	}
 
+	if cfg.ticketingEnabled {
+		wrapperOpts = append(wrapperOpts, connector.WithTicketingEnabled())
+	}
+
 	cw, err := connector.NewWrapper(ctx, c, wrapperOpts...)
 	if err != nil {
 		return nil, err
@@ -297,7 +493,7 @@ func NewConnectorRunner(ctx context.Context, c types.ConnectorServer, opts ...Op
 	runner.cw = cw
 
 	if cfg.onDemand {
-		if cfg.c1zPath == "" {
+		if cfg.c1zPath == "" && cfg.eventFeedConfig == nil && cfg.createTicketConfig == nil && cfg.listTicketSchemasConfig == nil && cfg.getTicketConfig == nil {
 			return nil, errors.New("c1zPath must be set when in on-demand mode")
 		}
 
@@ -315,8 +511,25 @@ func NewConnectorRunner(ctx context.Context, c types.ConnectorServer, opts ...Op
 		case cfg.revokeConfig != nil:
 			tm = local.NewRevoker(ctx, cfg.c1zPath, cfg.revokeConfig.grantID)
 
+		case cfg.createAccountConfig != nil:
+			tm = local.NewCreateAccountManager(ctx, cfg.c1zPath, cfg.createAccountConfig.login, cfg.createAccountConfig.email)
+
+		case cfg.deleteResourceConfig != nil:
+			tm = local.NewResourceDeleter(ctx, cfg.c1zPath, cfg.deleteResourceConfig.resourceId, cfg.deleteResourceConfig.resourceType)
+
+		case cfg.rotateCredentialsConfig != nil:
+			tm = local.NewCredentialRotator(ctx, cfg.c1zPath, cfg.rotateCredentialsConfig.resourceId, cfg.rotateCredentialsConfig.resourceType)
+
+		case cfg.eventFeedConfig != nil:
+			tm = local.NewEventFeed(ctx)
+		case cfg.createTicketConfig != nil:
+			tm = local.NewTicket(ctx, cfg.createTicketConfig.templatePath)
+		case cfg.listTicketSchemasConfig != nil:
+			tm = local.NewListTicketSchema(ctx)
+		case cfg.getTicketConfig != nil:
+			tm = local.NewGetTicket(ctx, cfg.getTicketConfig.ticketID)
 		default:
-			tm, err = local.NewSyncer(ctx, cfg.c1zPath)
+			tm, err = local.NewSyncer(ctx, cfg.c1zPath, local.WithTmpDir(cfg.tempDir))
 			if err != nil {
 				return nil, err
 			}
@@ -328,7 +541,7 @@ func NewConnectorRunner(ctx context.Context, c types.ConnectorServer, opts ...Op
 		return runner, nil
 	}
 
-	tm, err := c1api.NewC1TaskManager(ctx, cfg.clientID, cfg.clientSecret)
+	tm, err := c1api.NewC1TaskManager(ctx, cfg.clientID, cfg.clientSecret, cfg.tempDir)
 	if err != nil {
 		return nil, err
 	}

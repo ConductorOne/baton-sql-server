@@ -6,126 +6,167 @@ import (
 	"sync"
 	"time"
 
-	v1 "github.com/conductorone/baton-sdk/pb/c1/connectorapi/baton/v1"
-	"github.com/conductorone/baton-sdk/pkg/tasks"
-	"github.com/conductorone/baton-sdk/pkg/types"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/anypb"
+
+	"github.com/conductorone/baton-sdk/pkg/annotations"
+
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
-	"github.com/segmentio/ksuid"
 	"go.uber.org/zap"
 	pbstatus "google.golang.org/genproto/googleapis/rpc/status"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	v1 "github.com/conductorone/baton-sdk/pb/c1/connectorapi/baton/v1"
+	"github.com/conductorone/baton-sdk/pkg/tasks"
+	"github.com/conductorone/baton-sdk/pkg/types"
+	taskTypes "github.com/conductorone/baton-sdk/pkg/types/tasks"
 )
 
 var (
-	errTimeoutDuration      = time.Second * 30
-	ErrTaskHeartbeatFailure = errors.New("task heart beating failed")
-	ErrTaskNonRetryable     = errors.New("task failed and is non-retryable")
-	startupHelloTaskID      = ksuid.New().String()
+	// getHeartbeatInterval configures limits on how often we heartbeat a running task.
+	maxHeartbeatInterval     = time.Minute * 5
+	minHeartbeatInterval     = time.Second * 1
+	defaultHeartbeatInterval = time.Second * 30
+
+	// pollInterval configures limits on how often we poll for new tasks.
+	maxPollInterval = time.Minute * 5
+	minPollInterval = time.Second * 0
+
+	taskMaximumHeartbeatFailures = 10
+
+	ErrTaskCancelled       = errors.New("task was cancelled")
+	ErrTaskHeartbeatFailed = errors.New("task failed heartbeat")
+
+	ErrTaskNonRetryable = errors.New("task failed and is non-retryable")
 )
 
 type c1ApiTaskManager struct {
-	startupHello  sync.Once
+	mtx           sync.Mutex
+	started       bool
+	queue         []*v1.Task
 	serviceClient BatonServiceClient
+	tempDir       string
 }
 
-func (c *c1ApiTaskManager) backoffJitter(d time.Duration) time.Duration {
-	return d
-}
-
-func (c *c1ApiTaskManager) heartbeatTask(ctx context.Context, task *v1.Task) error {
-	// HACK(jirwin): We don't want to heartbeat the startup hello task, so we generate a unique ID for it and skip it here.
-	if task.GetId() == startupHelloTaskID {
-		return nil
+// getHeartbeatInterval returns an appropriate heartbeat interval. If the interval is 0, it will return the default heartbeat interval.
+// Otherwise, it will be clamped between minHeartbeatInterval and maxHeartbeatInterval.
+func getHeartbeatInterval(d time.Duration) time.Duration {
+	switch {
+	case d == 0:
+		return defaultHeartbeatInterval
+	case d < minHeartbeatInterval:
+		return minHeartbeatInterval
+	case d > maxHeartbeatInterval:
+		return maxHeartbeatInterval
+	default:
+		return d
 	}
+}
 
-	l := ctxzap.Extract(ctx).With(zap.String("task_id", task.GetId()), zap.Stringer("task_type", tasks.GetType(task)))
-	var waitDuration time.Duration
-
-	for {
-		l.Debug("waiting to heartbeat", zap.Duration("wait_duration", waitDuration))
-		select {
-		case <-ctx.Done():
-			return nil
-
-		case <-time.After(waitDuration):
-			resp, err := c.serviceClient.Heartbeat(ctx, &v1.BatonServiceHeartbeatRequest{
-				TaskId: task.GetId(),
-			})
-			if err != nil && !errors.Is(err, context.Canceled) {
-				l.Error("error sending heartbeat", zap.Error(err))
-				return err
-			}
-
-			if resp == nil {
-				l.Debug("heartbeat response was nil")
-				return nil
-			}
-
-			l.Debug("heartbeat successful", zap.Duration("next_deadline", resp.GetNextHeartbeat().AsDuration()))
-			if resp.Cancelled {
-				return ErrTaskHeartbeatFailure
-			}
-			waitDuration = resp.GetNextHeartbeat().AsDuration()
-		}
+// getNextPoll returns an appropriate poll interval. It will be clamped between minPollInterval and maxPollInterval.
+func getNextPoll(d time.Duration) time.Duration {
+	switch {
+	case d < minPollInterval:
+		return minPollInterval
+	case d > maxPollInterval:
+		return maxPollInterval
+	default:
+		return d
 	}
 }
 
 func (c *c1ApiTaskManager) Next(ctx context.Context) (*v1.Task, time.Duration, error) {
 	l := ctxzap.Extract(ctx)
 
-	var task *v1.Task
-	c.startupHello.Do(func() {
-		l.Debug("queueing startup hello task")
-		task = &v1.Task{
-			Id: startupHelloTaskID,
+	c.mtx.Lock()
+	defer c.mtx.Unlock()
+	if !c.started {
+		l.Debug("c1_api_task_manager.Next(): queueing initial hello task")
+		c.started = true
+		// Append a hello task to the queue on startup.
+		c.queue = append(c.queue, &v1.Task{
+			Id:     "",
+			Status: v1.Task_STATUS_PENDING,
 			TaskType: &v1.Task_Hello{
 				Hello: &v1.Task_HelloTask{},
 			},
-		}
-	})
+		})
 
-	if task != nil {
-		return task, c.backoffJitter(time.Second), nil
+		// TODO(morgabra) Get resumable tasks here and queue them.
 	}
 
-	l.Info("Checking for new tasks...")
+	if len(c.queue) != 0 {
+		t := c.queue[0]
+		c.queue = c.queue[1:]
+		l.Debug("c1_api_task_manager.Next(): returning queued task", zap.String("task_id", t.GetId()), zap.Stringer("task_type", tasks.GetType(t)))
+		return t, 0, nil
+	}
+
+	l.Debug("c1_api_task_manager.Next(): checking for new tasks")
 
 	resp, err := c.serviceClient.GetTask(ctx, &v1.BatonServiceGetTaskRequest{})
 	if err != nil {
-		return nil, c.backoffJitter(errTimeoutDuration), err
+		return nil, 0, err
 	}
 
-	if resp.Task == nil || tasks.Is(resp.Task, tasks.NoneType) {
-		return nil, c.backoffJitter(resp.GetNextPoll().AsDuration()), nil
+	nextPoll := getNextPoll(resp.GetNextPoll().AsDuration())
+	l = l.With(zap.Duration("next_poll", nextPoll))
+
+	if resp.GetTask() == nil || tasks.Is(resp.GetTask(), taskTypes.NoneType) {
+		l.Debug("c1_api_task_manager.Next(): no tasks available")
+		return nil, nextPoll, nil
 	}
 
-	return resp.Task, c.backoffJitter(resp.GetNextPoll().AsDuration()), nil
+	l = l.With(
+		zap.String("task_id", resp.GetTask().GetId()),
+		zap.Stringer("task_type", tasks.GetType(resp.GetTask())),
+	)
+
+	l.Debug("c1_api_task_manager.Next(): got task")
+	return resp.GetTask(), nextPoll, nil
 }
 
-func (c *c1ApiTaskManager) finishTask(ctx context.Context, task *v1.Task, err error) error {
+func (c *c1ApiTaskManager) finishTask(ctx context.Context, task *v1.Task, resp proto.Message, annos annotations.Annotations, err error) error {
 	l := ctxzap.Extract(ctx)
+	l = l.With(
+		zap.String("task_id", task.GetId()),
+		zap.Stringer("task_type", tasks.GetType(task)),
+	)
 
 	finishCtx, finishCanc := context.WithTimeout(context.Background(), time.Second*30)
 	defer finishCanc()
 
+	var marshalledResp *anypb.Any
+	if resp != nil {
+		marshalledResp, err = anypb.New(resp)
+		if err != nil {
+			l.Error("c1_api_task_manager.finishTask(): error while attempting to marshal response", zap.Error(err))
+			return err
+		}
+	}
+
 	if err == nil {
-		l.Debug("finishing task successfully")
+		l.Info("c1_api_task_manager.finishTask(): finishing task successfully")
 		_, err = c.serviceClient.FinishTask(finishCtx, &v1.BatonServiceFinishTaskRequest{
 			TaskId: task.GetId(),
+			Status: nil,
 			FinalState: &v1.BatonServiceFinishTaskRequest_Success_{
-				Success: &v1.BatonServiceFinishTaskRequest_Success{},
+				Success: &v1.BatonServiceFinishTaskRequest_Success{
+					Annotations: annos,
+					Response:    marshalledResp,
+				},
 			},
 		})
 		if err != nil {
-			l.Error("error while attempting to finish task successfully", zap.Error(err))
+			l.Error("c1_api_task_manager.finishTask(): error while attempting to finish task successfully", zap.Error(err))
 			return err
 		}
 
 		return nil
 	}
 
-	l.Error("finishing task with error", zap.Error(err))
+	l.Error("c1_api_task_manager.finishTask(): finishing task with error", zap.Error(err))
 
 	statusErr, ok := status.FromError(err)
 	if !ok {
@@ -141,11 +182,12 @@ func (c *c1ApiTaskManager) finishTask(ctx context.Context, task *v1.Task, err er
 		FinalState: &v1.BatonServiceFinishTaskRequest_Error_{
 			Error: &v1.BatonServiceFinishTaskRequest_Error{
 				NonRetryable: errors.Is(err, ErrTaskNonRetryable),
+				Annotations:  annos,
 			},
 		},
 	})
 	if rpcErr != nil {
-		l.Error("error finishing task", zap.Error(rpcErr))
+		l.Error("c1_api_task_manager.finishTask(): error finishing task", zap.Error(rpcErr))
 		return errors.Join(err, rpcErr)
 	}
 
@@ -155,7 +197,7 @@ func (c *c1ApiTaskManager) finishTask(ctx context.Context, task *v1.Task, err er
 func (c *c1ApiTaskManager) Process(ctx context.Context, task *v1.Task, cc types.ConnectorClient) error {
 	l := ctxzap.Extract(ctx)
 	if task == nil {
-		l.Debug("process called with nil task -- continuing")
+		l.Debug("c1_api_task_manager.Process(): process called with nil task -- continuing")
 		return nil
 	}
 
@@ -164,25 +206,14 @@ func (c *c1ApiTaskManager) Process(ctx context.Context, task *v1.Task, cc types.
 		zap.Stringer("task_type", tasks.GetType(task)),
 	)
 
-	l.Debug("processing task")
-
-	taskCtx, cancelTask := context.WithCancelCause(ctx)
-	defer cancelTask(nil)
-
-	// Begin heartbeat loop for task
-	go func() {
-		err := c.heartbeatTask(taskCtx, task)
-		if err != nil && !errors.Is(err, context.Canceled) {
-			l.Debug("error while heart beating", zap.Error(err))
-			cancelTask(err)
-		}
-	}()
+	l.Info("c1_api_task_manager.Process(): processing task")
 
 	tHelpers := &taskHelpers{
 		task:          task,
 		cc:            cc,
 		serviceClient: c.serviceClient,
 		taskFinisher:  c.finishTask,
+		tempDir:       c.tempDir,
 	}
 
 	// Based on the task type, call a handler to process the task.
@@ -190,37 +221,49 @@ func (c *c1ApiTaskManager) Process(ctx context.Context, task *v1.Task, cc types.
 	// Handlers may do their work in a goroutine allowing processing to move onto the next task
 	var handler tasks.TaskHandler
 	switch tasks.GetType(task) {
-	case tasks.FullSyncType:
+	case taskTypes.FullSyncType:
 		handler = newFullSyncTaskHandler(task, tHelpers)
 
-	case tasks.HelloType:
-		handler = newHelloTaskHandler(task, task.GetId() != startupHelloTaskID, tHelpers)
+	case taskTypes.HelloType:
+		handler = newHelloTaskHandler(task, tHelpers)
 
-	case tasks.GrantType:
+	case taskTypes.GrantType:
 		handler = newGrantTaskHandler(task, tHelpers)
 
-	case tasks.RevokeType:
+	case taskTypes.RevokeType:
 		handler = newRevokeTaskHandler(task, tHelpers)
 
-	default:
-		return c.finishTask(ctx, task, errors.New("unsupported task type"))
-	}
+	case taskTypes.CreateAccountType:
+		handler = newCreateAccountTaskHandler(task, tHelpers)
 
-	if handler == nil {
-		return c.finishTask(ctx, task, errors.New("unsupported task type - no handler"))
+	case taskTypes.CreateResourceType:
+		handler = newCreateResourceTaskHandler(task, tHelpers)
+
+	case taskTypes.DeleteResourceType:
+		handler = newDeleteResourceTaskHandler(task, tHelpers)
+
+	case taskTypes.RotateCredentialsType:
+		handler = newRotateCredentialsTaskHandler(task, tHelpers)
+	case taskTypes.CreateTicketType:
+		handler = newCreateTicketTaskHandler(task, tHelpers)
+	case taskTypes.ListTicketSchemasType:
+		handler = newListSchemasTaskHandler(task, tHelpers)
+	case taskTypes.GetTicketType:
+		handler = newGetTicketTaskHandler(task, tHelpers)
+	default:
+		return c.finishTask(ctx, task, nil, nil, errors.New("unsupported task type"))
 	}
 
 	err := handler.HandleTask(ctx)
 	if err != nil {
-		l.Error("error while handling task", zap.Error(err))
-		cancelTask(err)
+		l.Error("c1_api_task_manager.Process(): error while handling task", zap.Error(err))
 		return err
 	}
 
 	return nil
 }
 
-func NewC1TaskManager(ctx context.Context, clientID string, clientSecret string) (tasks.Manager, error) {
+func NewC1TaskManager(ctx context.Context, clientID string, clientSecret string, tempDir string) (tasks.Manager, error) {
 	serviceClient, err := newServiceClient(ctx, clientID, clientSecret)
 	if err != nil {
 		return nil, err
@@ -228,5 +271,6 @@ func NewC1TaskManager(ctx context.Context, clientID string, clientSecret string)
 
 	return &c1ApiTaskManager{
 		serviceClient: serviceClient,
+		tempDir:       tempDir,
 	}, nil
 }
