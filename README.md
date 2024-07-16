@@ -91,7 +91,7 @@ Available Commands:
 Flags:
       --client-id string       The client ID used to authenticate with ConductorOne ($BATON_CLIENT_ID)
       --client-secret string   The client secret used to authenticate with ConductorOne ($BATON_CLIENT_SECRET)
-      --dns string             The connection string for connecting to SQL Server ($BATON_DNS)
+      --dsn string             The connection string for connecting to SQL Server ($BATON_DSN)
   -f, --file string            The path to the c1z file to sync with ($BATON_FILE) (default "sync.c1z")
   -h, --help                   help for baton-sql-server
       --log-format string      The output format for logs: json, console ($BATON_LOG_FORMAT) (default "json")
