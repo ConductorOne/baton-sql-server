@@ -43,11 +43,11 @@ func (c *Client) ListServerRolePrincipals(ctx context.Context, serverRoleID stri
 SELECT 
   sys.server_principals.principal_id,
   sys.server_principals.name, 
-  sys.server_principals.type
+  sys.server_principals.type 
 FROM 
-  sys.server_principals
-JOIN sys.server_role_members ON sys.server_role_members.member_principal_id = sys.server_principals.principal_id
-WHERE sys.server_role_members.role_principal_id = @p1
+  sys.server_principals 
+JOIN sys.server_role_members ON sys.server_role_members.member_principal_id = sys.server_principals.principal_id 
+WHERE sys.server_role_members.role_principal_id = @p1 
 ORDER BY 
   sys.server_principals.principal_id ASC OFFSET @p2 ROWS FETCH NEXT @p3 ROWS ONLY
 `)
@@ -102,7 +102,7 @@ SELECT
   type_desc 
 FROM 
   sys.server_principals 
-WHERE type = 'R'
+WHERE type = 'R' 
 ORDER BY 
   principal_id ASC OFFSET @p1 ROWS FETCH NEXT @p2 ROWS ONLY
 `)
@@ -150,14 +150,14 @@ func (c *Client) ListDatabaseRoles(ctx context.Context, dbName string, pager *Pa
 	// Fetch the database role principals.
 	_, _ = sb.WriteString(`
 SELECT 
-  principal_id,
+  principal_id, 
   sid,
   name, 
   type_desc 
 FROM `)
 	_, _ = sb.WriteString(dbName)
 	_, _ = sb.WriteString(`.sys.database_principals 
-WHERE type = 'R'
+WHERE type = 'R' 
 ORDER BY 
   principal_id ASC OFFSET @p1 ROWS FETCH NEXT @p2 ROWS ONLY
 `)
@@ -202,14 +202,14 @@ func (c *Client) ListDatabaseRolePrincipals(ctx context.Context, dbName string, 
 	args := []interface{}{databaseRoleID, offset, limit + 1}
 
 	query := fmt.Sprintf(
-		`SELECT
+		`SELECT 
 	%s.sys.database_principals.principal_id,
 		%s.sys.database_principals.name,
 		%s.sys.database_principals.type
-		FROM
-	%s.sys.database_principals
-	JOIN %s.sys.database_role_members ON %s.sys.database_role_members.member_principal_id = %s.sys.database_principals.principal_id
-	WHERE %s.sys.database_role_members.role_principal_id = @p1
+		FROM 
+	%s.sys.database_principals 
+	JOIN %s.sys.database_role_members ON %s.sys.database_role_members.member_principal_id = %s.sys.database_principals.principal_id 
+	WHERE %s.sys.database_role_members.role_principal_id = @p1 
 	ORDER BY %s.sys.database_principals.principal_id ASC OFFSET @p2 ROWS FETCH NEXT @p3 ROWS ONLY`,
 		dbName,
 		dbName,
