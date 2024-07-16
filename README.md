@@ -27,14 +27,14 @@ The following tables are read while syncing data with this connector:
 
 ```
 brew install conductorone/baton/baton conductorone/baton/baton-sql-server
-baton-sql-server --dns "server=127.0.0.1;user id=sa;password=devP@ssw0rd;port=1433" 
+baton-sql-server --dsn "server=127.0.0.1;user id=sa;password=devP@ssw0rd;port=1433" 
 baton resources
 ```
 
 ## docker
 
 ```
-docker run --rm -v $(pwd):/out -e BATON_DNS="server=127.0.0.1;user id=sa;password=devP@ssw0rd;port=1433" ghcr.io/conductorone/baton-sql-server:latest -f "/out/sync.c1z"
+docker run --rm -v $(pwd):/out -e BATON_DSN="server=127.0.0.1;user id=sa;password=devP@ssw0rd;port=1433" ghcr.io/conductorone/baton-sql-server:latest -f "/out/sync.c1z"
 docker run --rm -v $(pwd):/out ghcr.io/conductorone/baton:latest -f "/out/sync.c1z" resources
 ```
 
@@ -43,7 +43,7 @@ docker run --rm -v $(pwd):/out ghcr.io/conductorone/baton:latest -f "/out/sync.c
 ```
 go install github.com/conductorone/baton/cmd/baton@main
 go install github.com/conductorone/baton-sql-server/cmd/baton-sql-server@main
-baton-sql-server --dns "server=127.0.0.1;user id=sa;password=devP@ssw0rd;port=1433" 
+baton-sql-server --dsn "server=127.0.0.1;user id=sa;password=devP@ssw0rd;port=1433" 
 baton resources
 ```
 
