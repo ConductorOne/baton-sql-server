@@ -20,7 +20,7 @@ var version = "dev"
 func main() {
 	ctx := context.Background()
 
-	_, cmd, err := config.DefineConfiguration(ctx, "baton-sql-server", getConnector, []field.SchemaField{dns}, nil)
+	_, cmd, err := config.DefineConfiguration(ctx, "baton-sql-server", getConnector, []field.SchemaField{dsn}, nil)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err.Error())
 		os.Exit(1)
@@ -41,7 +41,7 @@ func getConnector(ctx context.Context, v *viper.Viper) (types.ConnectorServer, e
 		return nil, err
 	}
 
-	cb, err := connector.New(ctx, v.GetString(dns.FieldName))
+	cb, err := connector.New(ctx, v.GetString(dsn.FieldName))
 	if err != nil {
 		l.Error("error creating connector", zap.Error(err))
 		return nil, err

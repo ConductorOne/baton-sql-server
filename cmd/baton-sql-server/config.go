@@ -9,14 +9,14 @@ import (
 )
 
 var (
-	dns = field.StringField("dns",
+	dsn = field.StringField("dsn",
 		field.WithDescription("The connection string for connecting to SQL Server"),
 		field.WithRequired(true))
 )
 
 // validateConfig is run after the configuration is loaded, and should return an error if it isn't valid.
 func validateConfig(_ context.Context, v *viper.Viper) error {
-	if v.GetString(dns.FieldName) == "" {
+	if v.GetString(dsn.FieldName) == "" {
 		return fmt.Errorf("--dsn is required")
 	}
 
