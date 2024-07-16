@@ -51,7 +51,10 @@ WHERE sys.server_role_members.role_principal_id = @p1
 ORDER BY 
   sys.server_principals.principal_id ASC OFFSET @p2 ROWS FETCH NEXT @p3 ROWS ONLY
 `)
-
+	l.Debug("ListServerRolePrincipals",
+		zap.String("sql query", sb.String()),
+		zap.Any("args", args),
+	)
 	rows, err := c.db.QueryxContext(ctx, sb.String(), args...)
 	if err != nil {
 		return nil, "", err
@@ -106,7 +109,10 @@ WHERE type = 'R'
 ORDER BY 
   principal_id ASC OFFSET @p1 ROWS FETCH NEXT @p2 ROWS ONLY
 `)
-
+	l.Debug("ListServerRoles",
+		zap.String("sql query", sb.String()),
+		zap.Any("args", args),
+	)
 	rows, err := c.db.QueryxContext(ctx, sb.String(), args...)
 	if err != nil {
 		return nil, "", err
@@ -161,7 +167,10 @@ WHERE type = 'R'
 ORDER BY 
   principal_id ASC OFFSET @p1 ROWS FETCH NEXT @p2 ROWS ONLY
 `)
-
+	l.Debug("ListDatabaseRoles",
+		zap.String("sql query", sb.String()),
+		zap.Any("args", args),
+	)
 	rows, err := c.db.QueryxContext(ctx, sb.String(), args...)
 	if err != nil {
 		return nil, "", err
@@ -221,7 +230,10 @@ func (c *Client) ListDatabaseRolePrincipals(ctx context.Context, dbName string, 
 		dbName,
 		dbName,
 	)
-
+	l.Debug("ListDatabaseRolePrincipals",
+		zap.String("sql query", query),
+		zap.Any("args", args),
+	)
 	rows, err := c.db.QueryxContext(ctx, query, args...)
 	if err != nil {
 		return nil, "", err
