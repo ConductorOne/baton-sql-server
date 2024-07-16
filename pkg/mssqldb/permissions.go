@@ -40,7 +40,10 @@ WHERE perms.state = 'G' OR perms.state = 'W'
 GROUP BY perms.grantee_principal_id, perms.state, principals.name, principals.type 
 ORDER BY perms.grantee_principal_id ASC 
 OFFSET @p1 ROWS FETCH NEXT @p2 ROWS ONLY`)
-	l.Debug("ListServerPermissions", zap.String("sql query", sb.String()))
+	l.Debug("ListServerPermissions",
+		zap.String("sql query", sb.String()),
+		zap.Any("args", args),
+	)
 	rows, err := c.db.QueryxContext(ctx, sb.String(), args...)
 	if err != nil {
 		return nil, "", err
@@ -98,7 +101,10 @@ WHERE (perms.state = 'G' OR perms.state = 'W') AND (perms.class = 0 AND perms.ma
 GROUP BY perms.grantee_principal_id, perms.state, principals.name, principals.type 
 ORDER BY perms.grantee_principal_id ASC 
 OFFSET @p1 ROWS FETCH NEXT @p2 ROWS ONLY`)
-	l.Debug("ListDatabasePermissions", zap.String("sql query", sb.String()))
+	l.Debug("ListDatabasePermissions",
+		zap.String("sql query", sb.String()),
+		zap.Any("args", args),
+	)
 	rows, err := c.db.QueryxContext(ctx, sb.String(), args...)
 	if err != nil {
 		return nil, "", err
