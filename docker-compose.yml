@@ -1,4 +1,3 @@
-version: '3.8'
 services:
   db:
     image: mcr.microsoft.com/mssql/server:2022-latest
@@ -7,9 +6,17 @@ services:
       - ACCEPT_EULA=Y
       - MSSQL_SA_PASSWORD=devP@ssw0rd
       - MSSQL_PID=Developer
-    network_mode: "host"
+    networks:
+      - sql
+    ports:
+      - 1433:1433
     volumes:
       - db:/var/opt/mssql
+
 volumes:
   db:
     driver: local
+
+networks:
+  sql:
+    driver: bridge
