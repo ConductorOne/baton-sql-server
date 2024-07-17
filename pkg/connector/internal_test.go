@@ -37,3 +37,27 @@ func TestClientListDatabasePermissions(t *testing.T) {
 		assert.NotNil(t, token)
 	}
 }
+
+func TestClientListServerPermissions(t *testing.T) {
+	var (
+		ctx   = context.Background()
+		pager = &mssqldb.Pager{
+			Size:  0,
+			Token: `{"states":null,"current_state":{"token":"1","resource_type_id":"server_user","resource_id":""}}`,
+		}
+	)
+
+	if dsn == "" {
+		t.Skip()
+	}
+
+	cli, err := mssqldb.New(ctx, dsn)
+	assert.Nil(t, err)
+
+	for pager.Token != "" {
+		pm, token, err := cli.ListServerPermissions(ctx, pager)
+		assert.Nil(t, err)
+		assert.NotNil(t, pm)
+		assert.NotNil(t, token)
+	}
+}
