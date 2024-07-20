@@ -5,11 +5,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Install Go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
           go-version: 1.22.x
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       - name: Run linters
         uses: golangci/golangci-lint-action@v3
         with:
@@ -24,11 +24,11 @@ jobs:
     steps:
       - name: Install Go
         if: success()
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
           go-version: ${{ matrix.go-version }}
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       - name: go tests
         run: go test -v -covermode=count -json ./... > test.json
       - name: annotate go tests
@@ -36,3 +36,49 @@ jobs:
         uses: guyarb/golang-test-annotations@v0.5.1
         with:
           test-results: test.json
+  test:
+    runs-on: ubuntu-latest
+    env:
+      BATON_LOG_LEVEL: debug
+      # Add any environment variables needed to run baton-sql-server
+      BATON_DSN: server=127.0.0.1;user id=sa;password=devP@ssw0rd;port=1433
+      # The following parameters are passed to grant/revoke commands
+      CONNECTOR_GRANT: 'database-role:msdb:6:member:user:257'
+      CONNECTOR_ENTITLEMENT: 'database-role:msdb:6:member'
+      CONNECTOR_PRINCIPAL_TYPE: 'user'
+      CONNECTOR_PRINCIPAL: '257'
+    steps:
+      - name: Install Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: 1.22.x
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Run Docker Compose as a Daemon (to start sql server)
+        run: docker-compose -f ./docker-compose.yml up --detach
+      - name: Install baton
+        run: ./scripts/get-baton.sh && mv baton /usr/local/bin
+      - name: Build baton-sql-server
+        run: go build ./cmd/baton-sql-server
+      - name: Run baton-sql-server
+        run: ./baton-sql-server
+      - name: Check for grant before revoking
+        run: |
+          ./baton-sql-server
+          baton grants --entitlement="${{ env.CONNECTOR_ENTITLEMENT }}" --output-format=json | jq --exit-status ".grants[].principal.id.resource == \"${{ env.CONNECTOR_PRINCIPAL }}\""
+      # - name: Revoke grants
+      #   run: |
+      #     ./baton-sql-server
+      #     ./baton-sql-server --revoke-grant ${{ env.CONNECTOR_GRANT }}
+      # - name: Check grant was revoked
+      #   run: |
+      #      ./baton-sql-server
+      #      baton grants --entitlement="${{ env.CONNECTOR_ENTITLEMENT }}" --output-format=json | jq --exit-status "if .grants then .grants[]?.principal.id.resource != \"${{ env.CONNECTOR_PRINCIPAL }}\" else . end"
+      # - name: Grant entitlement
+      #   run: |
+      #     ./baton-sql-server
+      #     ./baton-sql-server --grant-entitlement ${{ env.CONNECTOR_ENTITLEMENT }} --grant-principal-type ${{ env.CONNECTOR_PRINCIPAL_TYPE }} --grant-principal ${{ env.CONNECTOR_PRINCIPAL }}  --provisioning
+      # - name: Check grant was re-granted
+      #   run: |
+      #     ./baton-sql-server
+      #     baton grants --entitlement ${{ env.CONNECTOR_ENTITLEMENT }} --output-format=json | jq -e ".grants | any(.principal.id.resource ==\"${{ env.CONNECTOR_PRINCIPAL }}\")"
