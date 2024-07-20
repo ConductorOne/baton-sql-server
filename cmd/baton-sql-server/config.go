@@ -14,6 +14,10 @@ var (
 		field.WithRequired(true))
 )
 
+var cfg = field.Configuration{
+	Fields: []field.SchemaField{dsn},
+}
+
 // validateConfig is run after the configuration is loaded, and should return an error if it isn't valid.
 func validateConfig(_ context.Context, v *viper.Viper) error {
 	if v.GetString(dsn.FieldName) == "" {

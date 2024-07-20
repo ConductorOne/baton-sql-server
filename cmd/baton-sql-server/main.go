@@ -7,7 +7,6 @@ import (
 
 	config "github.com/conductorone/baton-sdk/pkg/config"
 	"github.com/conductorone/baton-sdk/pkg/connectorbuilder"
-	"github.com/conductorone/baton-sdk/pkg/field"
 	"github.com/conductorone/baton-sdk/pkg/types"
 	"github.com/conductorone/baton-sql-server/pkg/connector"
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
@@ -20,7 +19,7 @@ var version = "dev"
 func main() {
 	ctx := context.Background()
 
-	_, cmd, err := config.DefineConfiguration(ctx, "baton-sql-server", getConnector, []field.SchemaField{dsn}, nil)
+	_, cmd, err := config.DefineConfiguration(ctx, "baton-sql-server", getConnector, cfg)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err.Error())
 		os.Exit(1)
