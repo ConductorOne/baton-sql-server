@@ -3,7 +3,7 @@ module github.com/conductorone/baton-sql-server
 go 1.21
 
 require (
-	github.com/conductorone/baton-sdk v0.2.8
+	github.com/conductorone/baton-sdk v0.2.13
 	github.com/grpc-ecosystem/go-grpc-middleware v1.4.0
 	github.com/jmoiron/sqlx v1.3.5
 	github.com/microsoft/go-mssqldb v1.3.0
