@@ -55,7 +55,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
       - name: Run Docker Compose as a Daemon (to start sql server)
-        run: docker-compose -f ./docker-compose.yml up --detach
+        run: docker compose -f ./docker-compose.yml up --detach
       - name: Install baton
         run: ./scripts/get-baton.sh && mv baton /usr/local/bin
       - name: Build baton-sql-server
