@@ -90,12 +90,12 @@ func (c *Client) ListDatabasePermissions(ctx context.Context, dbName string, pag
     perms.state as state,
     STRING_AGG(perms.type, ',') as perms,
     principals.type as principal_type
-FROM `)
+FROM [`)
 	_, _ = sb.WriteString(dbName)
-	_, _ = sb.WriteString(`.sys.database_permissions perms
-         JOIN `)
+	_, _ = sb.WriteString(`].sys.database_permissions perms
+         JOIN [`)
 	_, _ = sb.WriteString(dbName)
-	_, _ = sb.WriteString(`.sys.database_principals AS principals 
+	_, _ = sb.WriteString(`].sys.database_principals AS principals 
              ON perms.grantee_principal_id = principals.principal_id 
 WHERE (perms.state = 'G' OR perms.state = 'W') AND (perms.class = 0 AND perms.major_id = 0) 
 GROUP BY perms.grantee_principal_id, perms.state, principals.name, principals.type 
