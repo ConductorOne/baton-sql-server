@@ -12,6 +12,11 @@ services:
       - 1433:1433
     volumes:
       - db:/var/opt/mssql
+    healthcheck:
+      test: [ "CMD", "/opt/mssql-tools18/bin/sqlcmd","-C -U sa -P 'devP@ssw0rd' -Q 'SELECT * FROM INFORMATION_SCHEMA.TABLES'" ]
+      interval: 10s
+      timeout: 10s
+      retries: 6
 
 volumes:
   db:
