@@ -160,9 +160,9 @@ SELECT
   sid,
   name, 
   type_desc 
-FROM `)
+FROM [`)
 	_, _ = sb.WriteString(dbName)
-	_, _ = sb.WriteString(`.sys.database_principals 
+	_, _ = sb.WriteString(`].sys.database_principals 
 WHERE type = 'R' 
 ORDER BY 
   principal_id ASC OFFSET @p1 ROWS FETCH NEXT @p2 ROWS ONLY
@@ -212,14 +212,14 @@ func (c *Client) ListDatabaseRolePrincipals(ctx context.Context, dbName string, 
 
 	query := fmt.Sprintf(
 		`SELECT 
-	%s.sys.database_principals.principal_id,
-		%s.sys.database_principals.name,
-		%s.sys.database_principals.type
+	[%s].sys.database_principals.principal_id,
+		[%s].sys.database_principals.name,
+		[%s].sys.database_principals.type
 		FROM 
-	%s.sys.database_principals 
-	JOIN %s.sys.database_role_members ON %s.sys.database_role_members.member_principal_id = %s.sys.database_principals.principal_id 
-	WHERE %s.sys.database_role_members.role_principal_id = @p1 
-	ORDER BY %s.sys.database_principals.principal_id ASC OFFSET @p2 ROWS FETCH NEXT @p3 ROWS ONLY`,
+	[%s].sys.database_principals 
+	JOIN [%s].sys.database_role_members ON [%s].sys.database_role_members.member_principal_id = [%s].sys.database_principals.principal_id 
+	WHERE [%s].sys.database_role_members.role_principal_id = @p1 
+	ORDER BY [%s].sys.database_principals.principal_id ASC OFFSET @p2 ROWS FETCH NEXT @p3 ROWS ONLY`,
 		dbName,
 		dbName,
 		dbName,

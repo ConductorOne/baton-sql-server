@@ -55,11 +55,13 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
       - name: Run Docker Compose as a Daemon (to start sql server)
-        run: docker-compose -f ./docker-compose.yml up --detach
+        run: docker compose -f ./docker-compose.yml up --detach
       - name: Install baton
         run: ./scripts/get-baton.sh && mv baton /usr/local/bin
       - name: Build baton-sql-server
         run: go build ./cmd/baton-sql-server
+      - name: Create another database
+        run: docker exec -t baton-sql-server-db-1 /opt/mssql-tools18/bin/sqlcmd -C -S localhost -U SA -P 'devP@ssw0rd' -Q 'create database [space test 1]'
       - name: Run baton-sql-server
         run: ./baton-sql-server
       - name: Check for grant before revoking

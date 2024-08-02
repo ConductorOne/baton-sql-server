@@ -104,9 +104,9 @@ SELECT
 	is_disabled
 FROM
     sys.server_principals 
-WHERE sid = (SELECT sid FROM `)
+WHERE sid = (SELECT sid FROM [`)
 	_, _ = sb.WriteString(dbName)
-	_, _ = sb.WriteString(`.sys.database_principals WHERE principal_id = @p1)`)
+	_, _ = sb.WriteString(`].sys.database_principals WHERE principal_id = @p1)`)
 
 	row := c.db.QueryRowxContext(ctx, sb.String(), principalID)
 	if row.Err() != nil {
@@ -141,9 +141,9 @@ SELECT
   principal_id,
   name, 
   type_desc
-FROM `)
+FROM [`)
 	_, _ = sb.WriteString(dbName)
-	_, _ = sb.WriteString(`.sys.database_principals
+	_, _ = sb.WriteString(`].sys.database_principals
 WHERE 
   (
     type = 'S' 
