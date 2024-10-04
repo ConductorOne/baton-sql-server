@@ -12,8 +12,9 @@ import (
 const DatabaseType = "database"
 
 type DbModel struct {
-	ID   int64  `db:"database_id"`
-	Name string `db:"name"`
+	ID        int64  `db:"database_id"`
+	Name      string `db:"name"`
+	StateDesc string `db:"state_desc"`
 }
 
 func (c *Client) GetDatabase(ctx context.Context, id int64) (*DbModel, error) {
@@ -48,7 +49,7 @@ func (c *Client) ListDatabases(ctx context.Context, pager *Pager) ([]*DbModel, s
 	args := []interface{}{offset, limit + 1}
 
 	var sb strings.Builder
-	_, _ = sb.WriteString(`SELECT name, database_id FROM sys.databases
+	_, _ = sb.WriteString(`SELECT name, database_id, state_desc FROM sys.databases
                                       ORDER BY database_id ASC 
                                       OFFSET @p1 ROWS
                                       FETCH NEXT @p2 ROWS ONLY`)
@@ -67,6 +68,10 @@ func (c *Client) ListDatabases(ctx context.Context, pager *Pager) ([]*DbModel, s
 		err = rows.StructScan(&dbModel)
 		if err != nil {
 			return nil, "", err
+		}
+		if c.skipUnavailableDatabases && dbModel.StateDesc != "ONLINE" {
+			l.Info("Skipping sync of unavailable database", zap.String("name", dbModel.Name), zap.String("state", dbModel.StateDesc))
+			continue
 		}
 		ret = append(ret, &dbModel)
 	}

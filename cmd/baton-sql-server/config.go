@@ -1,28 +1,17 @@
 package main
 
 import (
-	"context"
-	"fmt"
-
 	"github.com/conductorone/baton-sdk/pkg/field"
-	"github.com/spf13/viper"
 )
 
 var (
 	dsn = field.StringField("dsn",
 		field.WithDescription("The connection string for connecting to SQL Server"),
 		field.WithRequired(true))
+	skipUnavailableDatabases = field.BoolField("skip-unavailable-databases",
+		field.WithDescription("Skip databases that are unavailable (offline, restoring, etc)"))
 )
 
 var cfg = field.Configuration{
-	Fields: []field.SchemaField{dsn},
-}
-
-// validateConfig is run after the configuration is loaded, and should return an error if it isn't valid.
-func validateConfig(_ context.Context, v *viper.Viper) error {
-	if v.GetString(dsn.FieldName) == "" {
-		return fmt.Errorf("--dsn is required")
-	}
-
-	return nil
+	Fields: []field.SchemaField{dsn, skipUnavailableDatabases},
 }

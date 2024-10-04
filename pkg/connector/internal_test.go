@@ -49,7 +49,7 @@ func TestClientListDatabasePermissions(t *testing.T) {
 		t.Skip()
 	}
 
-	cli, err := mssqldb.New(ctx, dsn)
+	cli, err := mssqldb.New(ctx, dsn, false)
 	assert.Nil(t, err)
 
 	for _, test := range tests {
@@ -69,7 +69,7 @@ func TestClientListServerPermissions(t *testing.T) {
 		t.Skip()
 	}
 
-	cli, err := mssqldb.New(ctx, dsn)
+	cli, err := mssqldb.New(ctx, dsn, false)
 	assert.Nil(t, err)
 
 	for keepingPagination(pager.Token) {
@@ -84,7 +84,7 @@ func TestClientListServerRoles(t *testing.T) {
 		t.Skip()
 	}
 
-	cli, err := mssqldb.New(ctx, dsn)
+	cli, err := mssqldb.New(ctx, dsn, false)
 	assert.Nil(t, err)
 
 	for keepingPagination(pager.Token) {
@@ -129,7 +129,7 @@ func TestClientListDatabaseRoles(t *testing.T) {
 		t.Skip()
 	}
 
-	cli, err := mssqldb.New(ctx, dsn)
+	cli, err := mssqldb.New(ctx, dsn, false)
 	assert.Nil(t, err)
 
 	for _, test := range tests {
@@ -176,7 +176,7 @@ func TestClientListDatabaseRolePrincipals(t *testing.T) {
 		t.Skip()
 	}
 
-	cli, err := mssqldb.New(ctx, dsn)
+	cli, err := mssqldb.New(ctx, dsn, false)
 	assert.Nil(t, err)
 
 	for _, test := range tests {
@@ -197,7 +197,7 @@ func TestClientListServerRolePrincipals(t *testing.T) {
 		t.Skip()
 	}
 
-	cli, err := mssqldb.New(ctx, dsn)
+	cli, err := mssqldb.New(ctx, dsn, false)
 	assert.Nil(t, err)
 
 	for keepingPagination(pager.Token) {
@@ -212,7 +212,7 @@ func TestClientListDatabases(t *testing.T) {
 		t.Skip()
 	}
 
-	cli, err := mssqldb.New(ctx, dsn)
+	cli, err := mssqldb.New(ctx, dsn, false)
 	assert.Nil(t, err)
 
 	for keepingPagination(pager.Token) {

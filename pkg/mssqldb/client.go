@@ -9,7 +9,8 @@ import (
 )
 
 type Client struct {
-	db *sqlx.DB
+	db                       *sqlx.DB
+	skipUnavailableDatabases bool
 }
 
 // List databases
@@ -20,7 +21,7 @@ type Client struct {
 
 // List users
 
-func New(ctx context.Context, dsn string) (*Client, error) {
+func New(ctx context.Context, dsn string, skipUnavailableDatabases bool) (*Client, error) {
 	db, err := sqlx.Connect("sqlserver", dsn)
 	if err != nil {
 		return nil, err
@@ -31,7 +32,8 @@ func New(ctx context.Context, dsn string) (*Client, error) {
 	db.SetMaxIdleConns(1)
 
 	c := &Client{
-		db: db,
+		db:                       db,
+		skipUnavailableDatabases: skipUnavailableDatabases,
 	}
 
 	return c, nil
