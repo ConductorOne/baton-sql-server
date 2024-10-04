@@ -175,6 +175,40 @@ func (m *TicketSchema) validate(all bool) error {
 		}
 	}
 
+	for idx, item := range m.GetAnnotations() {
+		_, _ = idx, item
+
+		if all {
+			switch v := interface{}(item).(type) {
+			case interface{ ValidateAll() error }:
+				if err := v.ValidateAll(); err != nil {
+					errors = append(errors, TicketSchemaValidationError{
+						field:  fmt.Sprintf("Annotations[%v]", idx),
+						reason: "embedded message failed validation",
+						cause:  err,
+					})
+				}
+			case interface{ Validate() error }:
+				if err := v.Validate(); err != nil {
+					errors = append(errors, TicketSchemaValidationError{
+						field:  fmt.Sprintf("Annotations[%v]", idx),
+						reason: "embedded message failed validation",
+						cause:  err,
+					})
+				}
+			}
+		} else if v, ok := interface{}(item).(interface{ Validate() error }); ok {
+			if err := v.Validate(); err != nil {
+				return TicketSchemaValidationError{
+					field:  fmt.Sprintf("Annotations[%v]", idx),
+					reason: "embedded message failed validation",
+					cause:  err,
+				}
+			}
+		}
+
+	}
+
 	if len(errors) > 0 {
 		return TicketSchemaMultiError(errors)
 	}
@@ -279,6 +313,40 @@ func (m *TicketCustomField) validate(all bool) error {
 	// no validation rules for DisplayName
 
 	// no validation rules for Required
+
+	for idx, item := range m.GetAnnotations() {
+		_, _ = idx, item
+
+		if all {
+			switch v := interface{}(item).(type) {
+			case interface{ ValidateAll() error }:
+				if err := v.ValidateAll(); err != nil {
+					errors = append(errors, TicketCustomFieldValidationError{
+						field:  fmt.Sprintf("Annotations[%v]", idx),
+						reason: "embedded message failed validation",
+						cause:  err,
+					})
+				}
+			case interface{ Validate() error }:
+				if err := v.Validate(); err != nil {
+					errors = append(errors, TicketCustomFieldValidationError{
+						field:  fmt.Sprintf("Annotations[%v]", idx),
+						reason: "embedded message failed validation",
+						cause:  err,
+					})
+				}
+			}
+		} else if v, ok := interface{}(item).(interface{ Validate() error }); ok {
+			if err := v.Validate(); err != nil {
+				return TicketCustomFieldValidationError{
+					field:  fmt.Sprintf("Annotations[%v]", idx),
+					reason: "embedded message failed validation",
+					cause:  err,
+				}
+			}
+		}
+
+	}
 
 	switch v := m.Value.(type) {
 	case *TicketCustomField_StringValue:
@@ -609,6 +677,47 @@ func (m *TicketCustomField) validate(all bool) error {
 			}
 		}
 
+	case *TicketCustomField_NumberValue:
+		if v == nil {
+			err := TicketCustomFieldValidationError{
+				field:  "Value",
+				reason: "oneof value cannot be a typed-nil",
+			}
+			if !all {
+				return err
+			}
+			errors = append(errors, err)
+		}
+
+		if all {
+			switch v := interface{}(m.GetNumberValue()).(type) {
+			case interface{ ValidateAll() error }:
+				if err := v.ValidateAll(); err != nil {
+					errors = append(errors, TicketCustomFieldValidationError{
+						field:  "NumberValue",
+						reason: "embedded message failed validation",
+						cause:  err,
+					})
+				}
+			case interface{ Validate() error }:
+				if err := v.Validate(); err != nil {
+					errors = append(errors, TicketCustomFieldValidationError{
+						field:  "NumberValue",
+						reason: "embedded message failed validation",
+						cause:  err,
+					})
+				}
+			}
+		} else if v, ok := interface{}(m.GetNumberValue()).(interface{ Validate() error }); ok {
+			if err := v.Validate(); err != nil {
+				return TicketCustomFieldValidationError{
+					field:  "NumberValue",
+					reason: "embedded message failed validation",
+					cause:  err,
+				}
+			}
+		}
+
 	default:
 		_ = v // ensures v is used
 	}
@@ -716,6 +825,8 @@ func (m *TicketCustomFieldStringValue) validate(all bool) error {
 	var errors []error
 
 	// no validation rules for Value
+
+	// no validation rules for DefaultValue
 
 	if len(errors) > 0 {
 		return TicketCustomFieldStringValueMultiError(errors)
@@ -1005,6 +1116,167 @@ var _ interface {
 	ErrorName() string
 } = TicketCustomFieldBoolValueValidationError{}
 
+// Validate checks the field values on TicketCustomFieldNumberValue with the
+// rules defined in the proto definition for this message. If any rules are
+// violated, the first error encountered is returned, or nil if there are no violations.
+func (m *TicketCustomFieldNumberValue) Validate() error {
+	return m.validate(false)
+}
+
+// ValidateAll checks the field values on TicketCustomFieldNumberValue with the
+// rules defined in the proto definition for this message. If any rules are
+// violated, the result is a list of violation errors wrapped in
+// TicketCustomFieldNumberValueMultiError, or nil if none found.
+func (m *TicketCustomFieldNumberValue) ValidateAll() error {
+	return m.validate(true)
+}
+
+func (m *TicketCustomFieldNumberValue) validate(all bool) error {
+	if m == nil {
+		return nil
+	}
+
+	var errors []error
+
+	if all {
+		switch v := interface{}(m.GetValue()).(type) {
+		case interface{ ValidateAll() error }:
+			if err := v.ValidateAll(); err != nil {
+				errors = append(errors, TicketCustomFieldNumberValueValidationError{
+					field:  "Value",
+					reason: "embedded message failed validation",
+					cause:  err,
+				})
+			}
+		case interface{ Validate() error }:
+			if err := v.Validate(); err != nil {
+				errors = append(errors, TicketCustomFieldNumberValueValidationError{
+					field:  "Value",
+					reason: "embedded message failed validation",
+					cause:  err,
+				})
+			}
+		}
+	} else if v, ok := interface{}(m.GetValue()).(interface{ Validate() error }); ok {
+		if err := v.Validate(); err != nil {
+			return TicketCustomFieldNumberValueValidationError{
+				field:  "Value",
+				reason: "embedded message failed validation",
+				cause:  err,
+			}
+		}
+	}
+
+	if all {
+		switch v := interface{}(m.GetDefaultValue()).(type) {
+		case interface{ ValidateAll() error }:
+			if err := v.ValidateAll(); err != nil {
+				errors = append(errors, TicketCustomFieldNumberValueValidationError{
+					field:  "DefaultValue",
+					reason: "embedded message failed validation",
+					cause:  err,
+				})
+			}
+		case interface{ Validate() error }:
+			if err := v.Validate(); err != nil {
+				errors = append(errors, TicketCustomFieldNumberValueValidationError{
+					field:  "DefaultValue",
+					reason: "embedded message failed validation",
+					cause:  err,
+				})
+			}
+		}
+	} else if v, ok := interface{}(m.GetDefaultValue()).(interface{ Validate() error }); ok {
+		if err := v.Validate(); err != nil {
+			return TicketCustomFieldNumberValueValidationError{
+				field:  "DefaultValue",
+				reason: "embedded message failed validation",
+				cause:  err,
+			}
+		}
+	}
+
+	if len(errors) > 0 {
+		return TicketCustomFieldNumberValueMultiError(errors)
+	}
+
+	return nil
+}
+
+// TicketCustomFieldNumberValueMultiError is an error wrapping multiple
+// validation errors returned by TicketCustomFieldNumberValue.ValidateAll() if
+// the designated constraints aren't met.
+type TicketCustomFieldNumberValueMultiError []error
+
+// Error returns a concatenation of all the error messages it wraps.
+func (m TicketCustomFieldNumberValueMultiError) Error() string {
+	var msgs []string
+	for _, err := range m {
+		msgs = append(msgs, err.Error())
+	}
+	return strings.Join(msgs, "; ")
+}
+
+// AllErrors returns a list of validation violation errors.
+func (m TicketCustomFieldNumberValueMultiError) AllErrors() []error { return m }
+
+// TicketCustomFieldNumberValueValidationError is the validation error returned
+// by TicketCustomFieldNumberValue.Validate if the designated constraints
+// aren't met.
+type TicketCustomFieldNumberValueValidationError struct {
+	field  string
+	reason string
+	cause  error
+	key    bool
+}
+
+// Field function returns field value.
+func (e TicketCustomFieldNumberValueValidationError) Field() string { return e.field }
+
+// Reason function returns reason value.
+func (e TicketCustomFieldNumberValueValidationError) Reason() string { return e.reason }
+
+// Cause function returns cause value.
+func (e TicketCustomFieldNumberValueValidationError) Cause() error { return e.cause }
+
+// Key function returns key value.
+func (e TicketCustomFieldNumberValueValidationError) Key() bool { return e.key }
+
+// ErrorName returns error name.
+func (e TicketCustomFieldNumberValueValidationError) ErrorName() string {
+	return "TicketCustomFieldNumberValueValidationError"
+}
+
+// Error satisfies the builtin error interface
+func (e TicketCustomFieldNumberValueValidationError) Error() string {
+	cause := ""
+	if e.cause != nil {
+		cause = fmt.Sprintf(" | caused by: %v", e.cause)
+	}
+
+	key := ""
+	if e.key {
+		key = "key for "
+	}
+
+	return fmt.Sprintf(
+		"invalid %sTicketCustomFieldNumberValue.%s: %s%s",
+		key,
+		e.field,
+		e.reason,
+		cause)
+}
+
+var _ error = TicketCustomFieldNumberValueValidationError{}
+
+var _ interface {
+	Field() string
+	Reason() string
+	Key() bool
+	Cause() error
+	ErrorName() string
+} = TicketCustomFieldNumberValueValidationError{}
+
 // Validate checks the field values on TicketCustomFieldTimestampValue with the
 // rules defined in the proto definition for this message. If any rules are
 // violated, the first error encountered is returned, or nil if there are no violations.
@@ -1050,6 +1322,35 @@ func (m *TicketCustomFieldTimestampValue) validate(all bool) error {
 		if err := v.Validate(); err != nil {
 			return TicketCustomFieldTimestampValueValidationError{
 				field:  "Value",
+				reason: "embedded message failed validation",
+				cause:  err,
+			}
+		}
+	}
+
+	if all {
+		switch v := interface{}(m.GetDefaultValue()).(type) {
+		case interface{ ValidateAll() error }:
+			if err := v.ValidateAll(); err != nil {
+				errors = append(errors, TicketCustomFieldTimestampValueValidationError{
+					field:  "DefaultValue",
+					reason: "embedded message failed validation",
+					cause:  err,
+				})
+			}
+		case interface{ Validate() error }:
+			if err := v.Validate(); err != nil {
+				errors = append(errors, TicketCustomFieldTimestampValueValidationError{
+					field:  "DefaultValue",
+					reason: "embedded message failed validation",
+					cause:  err,
+				})
+			}
+		}
+	} else if v, ok := interface{}(m.GetDefaultValue()).(interface{ Validate() error }); ok {
+		if err := v.Validate(); err != nil {
+			return TicketCustomFieldTimestampValueValidationError{
+				field:  "DefaultValue",
 				reason: "embedded message failed validation",
 				cause:  err,
 			}
@@ -1161,6 +1462,8 @@ func (m *TicketCustomFieldPickStringValue) validate(all bool) error {
 	var errors []error
 
 	// no validation rules for Value
+
+	// no validation rules for DefaultValue
 
 	if len(errors) > 0 {
 		return TicketCustomFieldPickStringValueMultiError(errors)
@@ -1436,6 +1739,35 @@ func (m *TicketCustomFieldPickObjectValue) validate(all bool) error {
 
 	}
 
+	if all {
+		switch v := interface{}(m.GetDefaultValue()).(type) {
+		case interface{ ValidateAll() error }:
+			if err := v.ValidateAll(); err != nil {
+				errors = append(errors, TicketCustomFieldPickObjectValueValidationError{
+					field:  "DefaultValue",
+					reason: "embedded message failed validation",
+					cause:  err,
+				})
+			}
+		case interface{ Validate() error }:
+			if err := v.Validate(); err != nil {
+				errors = append(errors, TicketCustomFieldPickObjectValueValidationError{
+					field:  "DefaultValue",
+					reason: "embedded message failed validation",
+					cause:  err,
+				})
+			}
+		}
+	} else if v, ok := interface{}(m.GetDefaultValue()).(interface{ Validate() error }); ok {
+		if err := v.Validate(); err != nil {
+			return TicketCustomFieldPickObjectValueValidationError{
+				field:  "DefaultValue",
+				reason: "embedded message failed validation",
+				cause:  err,
+			}
+		}
+	}
+
 	if len(errors) > 0 {
 		return TicketCustomFieldPickObjectValueMultiError(errors)
 	}
@@ -1602,6 +1934,40 @@ func (m *TicketCustomFieldPickMultipleObjectValues) validate(all bool) error {
 			if err := v.Validate(); err != nil {
 				return TicketCustomFieldPickMultipleObjectValuesValidationError{
 					field:  fmt.Sprintf("AllowedValues[%v]", idx),
+					reason: "embedded message failed validation",
+					cause:  err,
+				}
+			}
+		}
+
+	}
+
+	for idx, item := range m.GetDefaultValues() {
+		_, _ = idx, item
+
+		if all {
+			switch v := interface{}(item).(type) {
+			case interface{ ValidateAll() error }:
+				if err := v.ValidateAll(); err != nil {
+					errors = append(errors, TicketCustomFieldPickMultipleObjectValuesValidationError{
+						field:  fmt.Sprintf("DefaultValues[%v]", idx),
+						reason: "embedded message failed validation",
+						cause:  err,
+					})
+				}
+			case interface{ Validate() error }:
+				if err := v.Validate(); err != nil {
+					errors = append(errors, TicketCustomFieldPickMultipleObjectValuesValidationError{
+						field:  fmt.Sprintf("DefaultValues[%v]", idx),
+						reason: "embedded message failed validation",
+						cause:  err,
+					})
+				}
+			}
+		} else if v, ok := interface{}(item).(interface{ Validate() error }); ok {
+			if err := v.Validate(); err != nil {
+				return TicketCustomFieldPickMultipleObjectValuesValidationError{
+					field:  fmt.Sprintf("DefaultValues[%v]", idx),
 					reason: "embedded message failed validation",
 					cause:  err,
 				}

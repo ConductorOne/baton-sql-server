@@ -3,7 +3,7 @@ module github.com/conductorone/baton-sql-server
 go 1.21
 
 require (
-	github.com/conductorone/baton-sdk v0.2.13
+	github.com/conductorone/baton-sdk v0.2.35
 	github.com/grpc-ecosystem/go-grpc-middleware v1.4.0
 	github.com/jmoiron/sqlx v1.3.5
 	github.com/microsoft/go-mssqldb v1.3.0
@@ -15,6 +15,7 @@ require (
 require (
 	filippo.io/age v1.1.1 // indirect
 	filippo.io/edwards25519 v1.1.0 // indirect
+	github.com/allegro/bigcache/v3 v3.1.0 // indirect
 	github.com/aws/aws-sdk-go-v2 v1.26.1 // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.6.2 // indirect
 	github.com/aws/aws-sdk-go-v2/config v1.27.11 // indirect
