@@ -11,7 +11,7 @@ func TestClient_GetServerPrincipalForDatabaseUser(t *testing.T) {
 	t.Skip("requires a running SQL Server instance")
 	ctx := context.Background()
 
-	c, err := New(ctx, "server=127.0.0.1;user id=sa;password=devP@ssw0rd;port=1433")
+	c, err := New(ctx, "server=127.0.0.1;user id=sa;password=devP@ssw0rd;port=1433", false)
 	require.NoError(t, err)
 
 	u, err := c.GetServerPrincipalForDatabasePrincipal(ctx, "master", 7)

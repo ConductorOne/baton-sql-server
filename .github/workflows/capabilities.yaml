@@ -18,7 +18,9 @@ jobs:
           token: ${{ secrets.RELENG_GITHUB_TOKEN }}
 
       - name: Run Docker Compose as a Daemon (to start sql server)
-        run: docker-compose -f ./docker-compose.yml up --detach
+        run: docker compose -f ./docker-compose.yml up --detach
+      - name: Create another database
+        run: docker exec -t baton-sql-server-db-1 /opt/mssql-tools18/bin/sqlcmd -C -S localhost -U SA -P 'devP@ssw0rd' -Q 'create database [space test 1]'
 
       - name: Setup Go
         uses: actions/setup-go@v5
@@ -29,6 +31,8 @@ jobs:
         run: go build -o connector ./cmd/baton-sql-server
 
       - name: Run and save output
+        env:
+          BATON_DSN: server=127.0.0.1;user id=sa;password=devP@ssw0rd;port=1433
         run: ./connector capabilities > baton_capabilities.json
 
       - name: Commit changes

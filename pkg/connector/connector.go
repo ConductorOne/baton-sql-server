@@ -58,8 +58,8 @@ func (o *Mssqldb) ResourceSyncers(ctx context.Context) []connectorbuilder.Resour
 	}
 }
 
-func New(ctx context.Context, dsn string) (*Mssqldb, error) {
-	c, err := mssqldb.New(ctx, dsn)
+func New(ctx context.Context, dsn string, skipUnavailableDatabases bool) (*Mssqldb, error) {
+	c, err := mssqldb.New(ctx, dsn, skipUnavailableDatabases)
 	if err != nil {
 		return nil, err
 	}
