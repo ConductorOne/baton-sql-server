@@ -1,5 +1,5 @@
 {
-  "source": ["./dist/macos-arm64_darwin_arm64/baton-sql-server"],
+  "source": ["./dist/macos-arm64_darwin_arm64_v8.0/baton-sql-server"],
   "bundle_id": "com.conductorone.baton-sql-server",
   "apple_id": {
     "username" : "justin.gallardo@conductorone.com"
