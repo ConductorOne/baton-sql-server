@@ -4,8 +4,12 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
+
+	"github.com/jmoiron/sqlx"
+	"go.uber.org/zap"
 
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
 )
@@ -183,4 +187,51 @@ ORDER BY
 	}
 
 	return ret, nextPageToken, nil
+}
+
+func (c *Client) GetUser(ctx context.Context, userId string) (*UserModel, error) {
+	l := ctxzap.Extract(ctx)
+	l.Debug("getting user")
+
+	query := `
+SELECT
+    principal_id,
+    sid,
+    name,
+    type_desc,
+    is_disabled
+FROM
+    sys.server_principals
+WHERE
+    (
+        type = 'S'
+            OR type = 'U'
+            OR type = 'C'
+            or type = 'E'
+            or type = 'K'
+        ) AND principal_id = @p1
+`
+
+	rows, err := c.db.QueryxContext(ctx, query, userId)
+	if err != nil {
+		return nil, err
+	}
+
+	defer func(rows *sqlx.Rows) {
+		err := rows.Close()
+		if err != nil {
+			l.Error("error closing rows", zap.Error(err))
+		}
+	}(rows)
+
+	var userModel *UserModel
+	err = rows.StructScan(userModel)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, fmt.Errorf("user not found: %s", userId)
+		}
+		return nil, err
+	}
+
+	return userModel, nil
 }

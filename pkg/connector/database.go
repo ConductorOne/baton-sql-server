@@ -146,6 +146,7 @@ func (d *databaseSyncer) Entitlements(ctx context.Context, resource *v2.Resource
 				Slug:        name,
 				Purpose:     v2.Entitlement_PURPOSE_VALUE_PERMISSION,
 				Resource:    resource,
+				GrantableTo: []*v2.ResourceType{resourceTypeUser},
 			},
 			&v2.Entitlement{
 				Id:          enTypes.NewEntitlementID(resource, key+"-grant"),
@@ -153,6 +154,7 @@ func (d *databaseSyncer) Entitlements(ctx context.Context, resource *v2.Resource
 				Slug:        grantSlug,
 				Purpose:     v2.Entitlement_PURPOSE_VALUE_PERMISSION,
 				Resource:    resource,
+				GrantableTo: []*v2.ResourceType{resourceTypeUser},
 			})
 	}
 
@@ -230,6 +232,90 @@ func (d *databaseSyncer) Grants(ctx context.Context, resource *v2.Resource, pTok
 	}
 
 	return ret, nextPageToken, nil, nil
+}
+
+func (d *databaseSyncer) Grant(ctx context.Context, resource *v2.Resource, entitlement *v2.Entitlement) ([]*v2.Grant, annotations.Annotations, error) {
+	if resource.Id.ResourceType != resourceTypeUser.Id {
+		return nil, nil, fmt.Errorf("resource type %s is not supported for granting", resource.Id.ResourceType)
+	}
+
+	splitId := strings.Split(entitlement.Id, ":")
+	if len(splitId) != 3 {
+		return nil, nil, fmt.Errorf("unexpected entitlement id: %s", entitlement.Id)
+	}
+
+	dbId, err := strconv.ParseInt(splitId[1], 10, 64)
+	if err != nil {
+		return nil, nil, fmt.Errorf("unexpected database id: %s", splitId[1])
+	}
+
+	permission := splitId[2]
+	isGrant := strings.Contains(permission, "-grant")
+	if isGrant {
+		permission = strings.Replace(permission, "-grant", "", 1)
+	}
+
+	database, err := d.client.GetDatabase(ctx, dbId)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	user, err := d.client.GetUser(ctx, resource.Id.Resource)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	err = d.client.GrantPermissionOnDatabase(ctx, permission, database.Name, user.Name)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	entitlementName := permission
+	if isGrant {
+		entitlementName = permission + "-grant"
+	}
+
+	newGrant := grTypes.NewGrant(resource, entitlementName, &v2.ResourceId{
+		Resource:     user.ID,
+		ResourceType: resourceTypeUser.Id,
+	})
+
+	return []*v2.Grant{newGrant}, nil, nil
+}
+
+func (d *databaseSyncer) Revoke(ctx context.Context, grant *v2.Grant) (annotations.Annotations, error) {
+	l := ctxzap.Extract(ctx)
+
+	if grant.Principal.Id.ResourceType != resourceTypeUser.Id {
+		return nil, fmt.Errorf("resource type %s is not supported for revoking", grant.Principal.Id.ResourceType)
+	}
+
+	splitId := strings.Split(grant.Entitlement.Id, ":")
+
+	dbId, err := strconv.ParseInt(splitId[1], 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("unexpected database id: %s", splitId[1])
+	}
+
+	permission := strings.Replace(splitId[2], "-grant", "", 1)
+
+	database, err := d.client.GetDatabase(ctx, dbId)
+	if err != nil {
+		return nil, err
+	}
+
+	user, err := d.client.GetUser(ctx, grant.Principal.Id.Resource)
+	if err != nil {
+		return nil, err
+	}
+
+	err = d.client.RevokePermissionOnDatabase(ctx, permission, database.Name, user.Name)
+	if err != nil {
+		return nil, err
+	}
+
+	l.Debug("revoked permission", zap.String("permission", permission), zap.String("user", user.Name), zap.String("database", database.Name))
+	return nil, nil
 }
 
 func newDatabaseSyncer(ctx context.Context, c *mssqldb.Client) *databaseSyncer {

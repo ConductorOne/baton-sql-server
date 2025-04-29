@@ -88,3 +88,45 @@ func (c *Client) ListDatabases(ctx context.Context, pager *Pager) ([]*DbModel, s
 
 	return ret, nextPageToken, nil
 }
+
+func (c *Client) GrantPermissionOnDatabase(ctx context.Context, permission, db, user string) error {
+	l := ctxzap.Extract(ctx)
+	l.Debug(
+		"granting permission on database",
+		zap.String("permission", permission),
+		zap.String("db", db),
+		zap.String("user", user),
+	)
+
+	command := `
+GRANT @p1 ON DATABASE::@p2 TO @p3;
+`
+
+	_, err := c.db.ExecContext(ctx, command, permission, db, user)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (c *Client) RevokePermissionOnDatabase(ctx context.Context, permission, db, user string) error {
+	l := ctxzap.Extract(ctx)
+	l.Debug(
+		"granting permission on database",
+		zap.String("permission", permission),
+		zap.String("db", db),
+		zap.String("user", user),
+	)
+
+	command := `
+REVOKE @p1 ON DATABASE::@p2 TO @p3;
+`
+
+	_, err := c.db.ExecContext(ctx, command, permission, db, user)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}

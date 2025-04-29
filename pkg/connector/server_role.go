@@ -58,7 +58,11 @@ func (d *serverRolePrincipalSyncer) List(ctx context.Context, parentResourceID *
 func (d *serverRolePrincipalSyncer) Entitlements(ctx context.Context, resource *v2.Resource, pToken *pagination.Token) ([]*v2.Entitlement, string, annotations.Annotations, error) {
 	var ret []*v2.Entitlement
 
-	ret = append(ret, enTypes.NewAssignmentEntitlement(resource, "member"))
+	ret = append(ret, enTypes.NewAssignmentEntitlement(
+		resource,
+		"member",
+		enTypes.WithGrantableTo(resourceTypeUser),
+	))
 
 	return ret, "", nil, nil
 }
