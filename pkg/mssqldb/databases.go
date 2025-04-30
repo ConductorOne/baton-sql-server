@@ -2,6 +2,7 @@ package mssqldb
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -98,9 +99,23 @@ func (c *Client) GrantPermissionOnDatabase(ctx context.Context, permission, db, 
 		zap.String("user", user),
 	)
 
-	command := `
-GRANT @p1 ON DATABASE::@p2 TO @p3;
-`
+	fullPermission, ok := DatabasePermissions[strings.ToUpper(permission)]
+	if !ok {
+		return fmt.Errorf("permission %s is not allowed", permission)
+	}
+
+	if strings.ContainsAny(db, "[]\"';") || strings.ContainsAny(user, "[]\"';") {
+		return fmt.Errorf("invalid characters in dbName or user")
+	}
+
+	command := fmt.Sprintf(
+		"GRANT %s ON DATABASE::[%s] TO [%s];",
+		fullPermission,
+		db,
+		user,
+	)
+
+	l.Debug("SQL QUERY", zap.String("q", command))
 
 	_, err := c.db.ExecContext(ctx, command, permission, db, user)
 	if err != nil {
@@ -113,17 +128,29 @@ GRANT @p1 ON DATABASE::@p2 TO @p3;
 func (c *Client) RevokePermissionOnDatabase(ctx context.Context, permission, db, user string) error {
 	l := ctxzap.Extract(ctx)
 	l.Debug(
-		"granting permission on database",
+		"revoking permission on database",
 		zap.String("permission", permission),
 		zap.String("db", db),
 		zap.String("user", user),
 	)
 
-	command := `
-REVOKE @p1 ON DATABASE::@p2 TO @p3;
-`
+	fullPermission, ok := DatabasePermissions[strings.ToUpper(permission)]
+	if !ok {
+		return fmt.Errorf("permission %s is not allowed", permission)
+	}
 
-	_, err := c.db.ExecContext(ctx, command, permission, db, user)
+	if strings.ContainsAny(db, "[]\"';") || strings.ContainsAny(user, "[]\"';") {
+		return fmt.Errorf("invalid characters in dbName or user")
+	}
+
+	command := fmt.Sprintf(
+		"GRANT %s ON DATABASE::[%s] TO [%s];",
+		fullPermission,
+		db,
+		user,
+	)
+
+	_, err := c.db.ExecContext(ctx, command, fullPermission, db, user)
 	if err != nil {
 		return err
 	}
