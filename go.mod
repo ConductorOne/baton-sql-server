@@ -2,8 +2,6 @@ module github.com/conductorone/baton-sql-server
 
 go 1.23.4
 
-toolchain go1.24.2
-
 require (
 	github.com/conductorone/baton-sdk v0.2.98
 	github.com/ennyjfrick/ruleguard-logfatal v0.0.2
