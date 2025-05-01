@@ -286,7 +286,7 @@ WHERE type = 'R' AND principal_id = @p1
 		return nil, err
 	}
 
-	return nil, err
+	return &roleModel, err
 }
 
 func (c *Client) GetDatabaseRole(ctx context.Context, dbName string, id string) (*RoleModel, error) {
@@ -321,7 +321,7 @@ WHERE type = 'R' AND principal_id = @p1
 		return nil, err
 	}
 
-	return nil, err
+	return &roleModel, err
 }
 
 func (c *Client) AddUserToServerRole(ctx context.Context, role string, user string) error {
@@ -349,7 +349,7 @@ func (c *Client) AddUserToDatabaseRole(ctx context.Context, role string, db stri
 		return fmt.Errorf("invalid characters in role or user")
 	}
 
-	query := fmt.Sprintf(`ALTER ROLE [%s] ADD MEMBER [%s];`, role, user)
+	query := fmt.Sprintf(`USE [%s]; ALTER ROLE [%s] ADD MEMBER [%s];`, db, role, user)
 	_, err := c.db.ExecContext(ctx, query)
 	if err != nil {
 		return err
@@ -360,13 +360,15 @@ func (c *Client) AddUserToDatabaseRole(ctx context.Context, role string, db stri
 
 func (c *Client) RevokeUserToServerRole(ctx context.Context, role string, user string) error {
 	l := ctxzap.Extract(ctx)
-	l.Debug("adding user to database role", zap.String("role", role), zap.String("user", user))
+	l.Debug("revoking user to database role", zap.String("role", role), zap.String("user", user))
 
 	if strings.ContainsAny(role, "[]\"';") || strings.ContainsAny(user, "[]\"';") {
 		return fmt.Errorf("invalid characters in role or user")
 	}
 
 	query := fmt.Sprintf(`ALTER SERVER ROLE [%s] DROP MEMBER [%s];`, role, user)
+
+	l.Debug("RevokeUserToServerRole", zap.String("sql query", query))
 
 	_, err := c.db.ExecContext(ctx, query)
 	if err != nil {
@@ -377,13 +379,18 @@ func (c *Client) RevokeUserToServerRole(ctx context.Context, role string, user s
 
 func (c *Client) RevokeUserToDatabaseRole(ctx context.Context, role string, db string, user string) error {
 	l := ctxzap.Extract(ctx)
-	l.Debug("adding user to database role", zap.String("role", role), zap.String("user", user), zap.String("db", db))
+	l.Debug("revoking user to database role", zap.String("role", role), zap.String("user", user), zap.String("db", db))
 
 	if strings.ContainsAny(role, "[]\"';") || strings.ContainsAny(user, "[]\"';") || strings.ContainsAny(db, "[]\"';") {
 		return fmt.Errorf("invalid characters in role or user")
 	}
 
-	query := fmt.Sprintf(`ALTER ROLE [%s] DROP MEMBER [%s];`, role, user)
+	query := fmt.Sprintf(`
+USE [%s];
+ALTER ROLE [%s] DROP MEMBER [%s];`, db, role, user)
+
+	l.Debug("RevokeUserToDatabaseRole", zap.String("sql query", query))
+
 	_, err := c.db.ExecContext(ctx, query)
 	if err != nil {
 		return err
