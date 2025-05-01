@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"strings"
 
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/annotations"
@@ -192,6 +193,130 @@ func (d *serverRolePrincipalSyncer) Grants(ctx context.Context, resource *v2.Res
 	}
 
 	return ret, npt, nil, nil
+}
+
+func (d *serverRolePrincipalSyncer) Grant(ctx context.Context, resource *v2.Resource, entitlement *v2.Entitlement) ([]*v2.Grant, annotations.Annotations, error) {
+	var err error
+
+	l := ctxzap.Extract(ctx)
+
+	if resource.Id.ResourceType != resourceTypeUser.Id {
+		return nil, nil, fmt.Errorf("resource type %s is not supported for granting", resource.Id.ResourceType)
+	}
+
+	// database-role:baton_test:6:member
+	splitId := strings.Split(entitlement.Id, ":")
+	if len(splitId) != 4 {
+		return nil, nil, fmt.Errorf("unexpected entitlement id: %s", entitlement.Id)
+	}
+
+	dbName := splitId[1]
+	roleId := splitId[2]
+
+	var role *mssqldb.RoleModel
+
+	switch entitlement.Resource.Id.ResourceType {
+	case resourceTypeServerRole.Id:
+		role, err = d.client.GetServerRole(ctx, roleId)
+		if err != nil {
+			return nil, nil, err
+		}
+	case resourceTypeDatabaseRole.Id:
+		role, err = d.client.GetDatabaseRole(ctx, dbName, roleId)
+		if err != nil {
+			return nil, nil, err
+		}
+	default:
+		return nil, nil, fmt.Errorf("unexpected resource type: %s", entitlement.Resource.Id.ResourceType)
+	}
+
+	dbUser, err := d.client.GetUserFromDb(ctx, dbName, resource.Id.Resource)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if dbUser == nil {
+		l.Info("user not found in database, creating user for principal", zap.String("user", resource.Id.Resource))
+
+		user, err := d.client.GetUserPrincipal(ctx, resource.Id.Resource)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		err = d.client.CreateDatabaseUserForPrincipal(ctx, dbName, user.Name)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+
+	switch entitlement.Resource.Id.ResourceType {
+	case resourceTypeServerRole.Id:
+		err = d.client.AddUserToServerRole(ctx, role.Name, resource.Id.Resource)
+		if err != nil {
+			return nil, nil, err
+		}
+	case resourceTypeDatabaseRole.Id:
+		err = d.client.AddUserToDatabaseRole(ctx, role.Name, dbName, resource.Id.Resource)
+		if err != nil {
+			return nil, nil, err
+		}
+	default:
+		return nil, nil, fmt.Errorf("unexpected resource type: %s", entitlement.Resource.Id.ResourceType)
+	}
+
+	grants := []*v2.Grant{
+		grTypes.NewGrant(resource, "member", &v2.ResourceId{
+			Resource:     resource.Id.Resource,
+			ResourceType: resourceTypeUser.Id,
+		}),
+	}
+
+	return grants, nil, nil
+}
+
+func (d *serverRolePrincipalSyncer) Revoke(ctx context.Context, grant *v2.Grant) (annotations.Annotations, error) {
+	userId := grant.Principal.Id.Resource
+
+	user, err := d.client.GetUserPrincipal(ctx, userId)
+	if err != nil {
+		return nil, err
+	}
+
+	// database-role:baton_test:6:member
+	splitId := strings.Split(grant.Entitlement.Id, ":")
+	if len(splitId) != 4 {
+		return nil, fmt.Errorf("unexpected entitlement id: %s", grant.Entitlement.Id)
+	}
+
+	dbName := splitId[1]
+	roleId := splitId[2]
+
+	switch grant.Entitlement.Resource.Id.ResourceType {
+	case resourceTypeServerRole.Id:
+		role, err := d.client.GetServerRole(ctx, roleId)
+		if err != nil {
+			return nil, err
+		}
+
+		err = d.client.RevokeUserToServerRole(ctx, role.Name, user.Name)
+		if err != nil {
+			return nil, err
+		}
+	case resourceTypeDatabaseRole.Id:
+		role, err := d.client.GetDatabaseRole(ctx, dbName, roleId)
+		if err != nil {
+			return nil, err
+		}
+
+		err = d.client.RevokeUserToDatabaseRole(ctx, role.Name, dbName, user.Name)
+		if err != nil {
+			return nil, err
+		}
+	default:
+		return nil, fmt.Errorf("unexpected resource type: %s", grant.Entitlement.Resource.Id.ResourceType)
+	}
+
+	return nil, err
 }
 
 func newServerRolePrincipalSyncer(ctx context.Context, c *mssqldb.Client) *serverRolePrincipalSyncer {
