@@ -54,6 +54,18 @@ func Is(task *v1.Task, target taskTypes.TaskType) bool {
 		_, ok = task.GetTaskType().(*v1.Task_ListTicketSchemas)
 	case taskTypes.GetTicketType:
 		_, ok = task.GetTaskType().(*v1.Task_GetTicket)
+	case taskTypes.BulkCreateTicketsType:
+		_, ok = task.GetTaskType().(*v1.Task_BulkCreateTickets)
+	case taskTypes.BulkGetTicketsType:
+		_, ok = task.GetTaskType().(*v1.Task_BulkGetTickets)
+	case taskTypes.ActionListSchemasType:
+		_, ok = task.GetTaskType().(*v1.Task_ActionListSchemas)
+	case taskTypes.ActionGetSchemaType:
+		_, ok = task.GetTaskType().(*v1.Task_ActionGetSchema)
+	case taskTypes.ActionInvokeType:
+		_, ok = task.GetTaskType().(*v1.Task_ActionInvoke)
+	case taskTypes.ActionStatusType:
+		_, ok = task.GetTaskType().(*v1.Task_ActionStatus)
 	default:
 		return false
 	}
@@ -93,6 +105,18 @@ func GetType(task *v1.Task) taskTypes.TaskType {
 		return taskTypes.ListTicketSchemasType
 	case *v1.Task_GetTicket:
 		return taskTypes.GetTicketType
+	case *v1.Task_BulkCreateTickets:
+		return taskTypes.BulkCreateTicketsType
+	case *v1.Task_BulkGetTickets:
+		return taskTypes.BulkGetTicketsType
+	case *v1.Task_ActionListSchemas:
+		return taskTypes.ActionListSchemasType
+	case *v1.Task_ActionGetSchema:
+		return taskTypes.ActionGetSchemaType
+	case *v1.Task_ActionInvoke:
+		return taskTypes.ActionInvokeType
+	case *v1.Task_ActionStatus:
+		return taskTypes.ActionStatusType
 	default:
 		return taskTypes.UnknownType
 	}
