@@ -1,75 +1,79 @@
 {
-  "@type": "type.googleapis.com/c1.connector.v2.ConnectorCapabilities",
-  "resourceTypeCapabilities": [
+  "@type":  "type.googleapis.com/c1.connector.v2.ConnectorCapabilities",
+  "resourceTypeCapabilities":  [
     {
-      "resourceType": {
-        "id": "database",
-        "displayName": "Database"
+      "resourceType":  {
+        "id":  "database",
+        "displayName":  "Database"
       },
-      "capabilities": [
-        "CAPABILITY_SYNC"
+      "capabilities":  [
+        "CAPABILITY_SYNC",
+        "CAPABILITY_PROVISION"
       ]
     },
     {
-      "resourceType": {
-        "id": "database-role",
-        "displayName": "Database Role",
-        "traits": [
+      "resourceType":  {
+        "id":  "database-role",
+        "displayName":  "Database Role",
+        "traits":  [
           "TRAIT_ROLE"
         ]
       },
-      "capabilities": [
-        "CAPABILITY_SYNC"
+      "capabilities":  [
+        "CAPABILITY_SYNC",
+        "CAPABILITY_PROVISION"
       ]
     },
     {
-      "resourceType": {
-        "id": "group",
-        "displayName": "Group",
-        "traits": [
+      "resourceType":  {
+        "id":  "group",
+        "displayName":  "Group",
+        "traits":  [
           "TRAIT_USER"
         ]
       },
-      "capabilities": [
+      "capabilities":  [
         "CAPABILITY_SYNC"
       ]
     },
     {
-      "resourceType": {
-        "id": "server",
-        "displayName": "Server"
+      "resourceType":  {
+        "id":  "server",
+        "displayName":  "Server"
       },
-      "capabilities": [
+      "capabilities":  [
         "CAPABILITY_SYNC"
       ]
     },
     {
-      "resourceType": {
-        "id": "server-role",
-        "displayName": "Server Role",
-        "traits": [
+      "resourceType":  {
+        "id":  "server-role",
+        "displayName":  "Server Role",
+        "traits":  [
           "TRAIT_ROLE"
         ]
       },
-      "capabilities": [
-        "CAPABILITY_SYNC"
+      "capabilities":  [
+        "CAPABILITY_SYNC",
+        "CAPABILITY_PROVISION"
       ]
     },
     {
-      "resourceType": {
-        "id": "user",
-        "displayName": "User",
-        "traits": [
+      "resourceType":  {
+        "id":  "user",
+        "displayName":  "User",
+        "traits":  [
           "TRAIT_USER"
         ]
       },
-      "capabilities": [
+      "capabilities":  [
         "CAPABILITY_SYNC"
       ]
     }
   ],
-  "connectorCapabilities": [
+  "connectorCapabilities":  [
+    "CAPABILITY_PROVISION",
     "CAPABILITY_SYNC"
   ],
-  "credentialDetails": {}
+  "credentialDetails":  {}
 }
