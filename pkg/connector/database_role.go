@@ -233,6 +233,95 @@ func (d *databaseRolePrincipalSyncer) Grants(
 	return ret, npt, nil, nil
 }
 
+func (d *databaseRolePrincipalSyncer) Grant(ctx context.Context, resource *v2.Resource, entitlement *v2.Entitlement) ([]*v2.Grant, annotations.Annotations, error) {
+	var err error
+
+	l := ctxzap.Extract(ctx)
+
+	if resource.Id.ResourceType != resourceTypeUser.Id {
+		return nil, nil, fmt.Errorf("resource type %s is not supported for granting", resource.Id.ResourceType)
+	}
+
+	// database-role:baton_test:6:member
+	splitId := strings.Split(entitlement.Id, ":")
+	if len(splitId) != 4 {
+		return nil, nil, fmt.Errorf("unexpected entitlement id: %s", entitlement.Id)
+	}
+
+	dbName := splitId[1]
+	roleId := splitId[2]
+
+	var role *mssqldb.RoleModel
+
+	role, err = d.client.GetDatabaseRole(ctx, dbName, roleId)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	dbUser, err := d.client.GetUserFromDb(ctx, dbName, resource.Id.Resource)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if dbUser == nil {
+		l.Info("user not found in database, creating user for principal", zap.String("user", resource.Id.Resource))
+
+		user, err := d.client.GetUserPrincipal(ctx, resource.Id.Resource)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		err = d.client.CreateDatabaseUserForPrincipal(ctx, dbName, user.Name)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+
+	err = d.client.AddUserToDatabaseRole(ctx, role.Name, dbName, resource.Id.Resource)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	grants := []*v2.Grant{
+		grTypes.NewGrant(resource, "member", &v2.ResourceId{
+			Resource:     resource.Id.Resource,
+			ResourceType: resourceTypeUser.Id,
+		}),
+	}
+
+	return grants, nil, nil
+}
+
+func (d *databaseRolePrincipalSyncer) Revoke(ctx context.Context, grant *v2.Grant) (annotations.Annotations, error) {
+	userId := grant.Principal.Id.Resource
+
+	user, err := d.client.GetUserPrincipal(ctx, userId)
+	if err != nil {
+		return nil, err
+	}
+
+	// database-role:baton_test:6:member
+	splitId := strings.Split(grant.Entitlement.Id, ":")
+	if len(splitId) != 4 {
+		return nil, fmt.Errorf("unexpected entitlement id: %s", grant.Entitlement.Id)
+	}
+
+	dbName := splitId[1]
+	roleId := splitId[2]
+
+	role, err := d.client.GetDatabaseRole(ctx, dbName, roleId)
+	if err != nil {
+		return nil, err
+	}
+
+	err = d.client.RevokeUserToDatabaseRole(ctx, role.Name, dbName, user.Name)
+	if err != nil {
+		return nil, err
+	}
+
+	return nil, err
+}
+
 func newDatabaseRolePrincipalSyncer(ctx context.Context, c *mssqldb.Client) *databaseRolePrincipalSyncer {
 	return &databaseRolePrincipalSyncer{
 		resourceType: resourceTypeDatabaseRole,

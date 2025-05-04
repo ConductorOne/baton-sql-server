@@ -262,3 +262,139 @@ func (c *Client) ListDatabaseRolePrincipals(ctx context.Context, dbName string, 
 
 	return ret, nextPageToken, nil
 }
+
+func (c *Client) GetServerRole(ctx context.Context, id string) (*RoleModel, error) {
+	l := ctxzap.Extract(ctx)
+	l.Debug("getting database role", zap.String("id", id))
+
+	query := `
+SELECT 
+  principal_id, 
+  sid,
+  name, 
+  type_desc 
+	FROM 
+sys.server_principals 
+WHERE type = 'R' AND principal_id = @p1
+`
+
+	var roleModel RoleModel
+	row := c.db.QueryRowxContext(ctx, query, id)
+
+	err := row.StructScan(&roleModel)
+	if err != nil {
+		return nil, err
+	}
+
+	return &roleModel, err
+}
+
+func (c *Client) GetDatabaseRole(ctx context.Context, dbName string, id string) (*RoleModel, error) {
+	l := ctxzap.Extract(ctx)
+	l.Debug("getting database role", zap.String("id", id), zap.String("dbName", dbName))
+
+	if strings.ContainsAny(dbName, "[]\"';") {
+		return nil, fmt.Errorf("invalid characters in dbName")
+	}
+
+	query := `
+SELECT 
+  principal_id, 
+  sid,
+  name, 
+  type_desc 
+	FROM 
+[%s].sys.database_principals 
+WHERE type = 'R' AND principal_id = @p1
+`
+
+	query = fmt.Sprintf(
+		query,
+		dbName,
+	)
+
+	var roleModel RoleModel
+	row := c.db.QueryRowxContext(ctx, query, id)
+
+	err := row.StructScan(&roleModel)
+	if err != nil {
+		return nil, err
+	}
+
+	return &roleModel, err
+}
+
+func (c *Client) AddUserToServerRole(ctx context.Context, role string, user string) error {
+	l := ctxzap.Extract(ctx)
+	l.Debug("adding user to database role", zap.String("role", role), zap.String("user", user))
+
+	if strings.ContainsAny(role, "[]\"';") || strings.ContainsAny(user, "[]\"';") {
+		return fmt.Errorf("invalid characters in role or user")
+	}
+
+	query := fmt.Sprintf(`ALTER SERVER ROLE [%s] ADD MEMBER [%s];`, role, user)
+
+	_, err := c.db.ExecContext(ctx, query)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (c *Client) AddUserToDatabaseRole(ctx context.Context, role string, db string, user string) error {
+	l := ctxzap.Extract(ctx)
+	l.Debug("adding user to database role", zap.String("role", role), zap.String("user", user), zap.String("db", db))
+
+	if strings.ContainsAny(role, "[]\"';") || strings.ContainsAny(user, "[]\"';") || strings.ContainsAny(db, "[]\"';") {
+		return fmt.Errorf("invalid characters in role or user")
+	}
+
+	query := fmt.Sprintf(`USE [%s]; ALTER ROLE [%s] ADD MEMBER [%s];`, db, role, user)
+	_, err := c.db.ExecContext(ctx, query)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (c *Client) RevokeUserToServerRole(ctx context.Context, role string, user string) error {
+	l := ctxzap.Extract(ctx)
+	l.Debug("revoking user to database role", zap.String("role", role), zap.String("user", user))
+
+	if strings.ContainsAny(role, "[]\"';") || strings.ContainsAny(user, "[]\"';") {
+		return fmt.Errorf("invalid characters in role or user")
+	}
+
+	query := fmt.Sprintf(`ALTER SERVER ROLE [%s] DROP MEMBER [%s];`, role, user)
+
+	l.Debug("RevokeUserToServerRole", zap.String("sql query", query))
+
+	_, err := c.db.ExecContext(ctx, query)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (c *Client) RevokeUserToDatabaseRole(ctx context.Context, role string, db string, user string) error {
+	l := ctxzap.Extract(ctx)
+	l.Debug("revoking user to database role", zap.String("role", role), zap.String("user", user), zap.String("db", db))
+
+	if strings.ContainsAny(role, "[]\"';") || strings.ContainsAny(user, "[]\"';") || strings.ContainsAny(db, "[]\"';") {
+		return fmt.Errorf("invalid characters in role or user")
+	}
+
+	query := fmt.Sprintf(`
+USE [%s];
+ALTER ROLE [%s] DROP MEMBER [%s];`, db, role, user)
+
+	l.Debug("RevokeUserToDatabaseRole", zap.String("sql query", query))
+
+	_, err := c.db.ExecContext(ctx, query)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
