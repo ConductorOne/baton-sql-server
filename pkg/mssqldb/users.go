@@ -306,3 +306,35 @@ CREATE USER [%s] FOR LOGIN [%s];
 
 	return nil
 }
+
+// CreateWindowsLogin creates a SQL Server login from Windows AD for the specified domain and username.
+// If domain is provided, it will create the login in the format [DOMAIN\Username],
+// otherwise it will use just [Username].
+func (c *Client) CreateWindowsLogin(ctx context.Context, domain, username string) error {
+	l := ctxzap.Extract(ctx)
+
+	// Check for invalid characters to prevent SQL injection
+	if (domain != "" && strings.ContainsAny(domain, "[]\"';")) || strings.ContainsAny(username, "[]\"';") {
+		return fmt.Errorf("invalid characters in domain or username")
+	}
+
+	var loginName string
+	if domain != "" {
+		loginName = fmt.Sprintf("[%s\\%s]", domain, username)
+		l.Debug("creating windows login with domain", zap.String("login", loginName))
+	} else {
+		loginName = fmt.Sprintf("[%s]", username)
+		l.Debug("creating windows login without domain", zap.String("login", loginName))
+	}
+
+	query := fmt.Sprintf("CREATE LOGIN %s FROM WINDOWS;", loginName)
+
+	l.Debug("SQL QUERY", zap.String("q", query))
+
+	_, err := c.db.ExecContext(ctx, query)
+	if err != nil {
+		return fmt.Errorf("failed to create Windows login: %w", err)
+	}
+
+	return nil
+}

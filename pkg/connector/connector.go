@@ -35,6 +35,30 @@ func (o *Mssqldb) Metadata(ctx context.Context) (*v2.ConnectorMetadata, error) {
 		DisplayName: fmt.Sprintf("Microsoft SQL Server (%s)", serverInfo.Name),
 		Annotations: annos,
 		Description: "Baton connector for Microsoft SQL Server connector",
+		AccountCreationSchema: &v2.ConnectorAccountCreationSchema{
+			FieldMap: map[string]*v2.ConnectorAccountCreationSchema_Field{
+				"domain": {
+					DisplayName: "Active Directory Domain",
+					Required:    false,
+					Description: "The Active Directory domain for the user (optional). If provided, the login will be created as [DOMAIN\\Username].",
+					Field: &v2.ConnectorAccountCreationSchema_Field_StringField{
+						StringField: &v2.ConnectorAccountCreationSchema_StringField{},
+					},
+					Placeholder: "DOMAIN",
+					Order:       1,
+				},
+				"username": {
+					DisplayName: "Username",
+					Required:    true,
+					Description: "The Active Directory username for which to create a SQL Server login.",
+					Field: &v2.ConnectorAccountCreationSchema_Field_StringField{
+						StringField: &v2.ConnectorAccountCreationSchema_StringField{},
+					},
+					Placeholder: "username",
+					Order:       2,
+				},
+			},
+		},
 	}, nil
 }
 
