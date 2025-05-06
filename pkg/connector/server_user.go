@@ -87,7 +87,7 @@ func (d *userPrincipalSyncer) Grants(ctx context.Context, resource *v2.Resource,
 	return nil, "", nil, nil
 }
 
-// CreateAccount creates a SQL Server login and database user for an Active Directory user.
+// CreateAccount creates a SQL Server login for an Active Directory user without adding database users.
 // It implements the AccountManager interface.
 func (d *userPrincipalSyncer) CreateAccount(
 	ctx context.Context,
@@ -117,7 +117,7 @@ func (d *userPrincipalSyncer) CreateAccount(
 		return nil, nil, nil, fmt.Errorf("failed to create Windows login: %w", err)
 	}
 
-	// Determine the formatted username for the database user
+	// Determine the formatted username for the login
 	var formattedUsername string
 	if domain != "" {
 		formattedUsername = fmt.Sprintf("%s\\%s", domain, username)
@@ -125,48 +125,11 @@ func (d *userPrincipalSyncer) CreateAccount(
 		formattedUsername = username
 	}
 
-	// Get list of databases to create users in
-	databases, _, err := d.client.ListDatabases(ctx, &mssqldb.Pager{})
-	if err != nil {
-		l.Error("Failed to retrieve databases", zap.Error(err))
-		errMsg := fmt.Sprintf("Login created successfully, but failed to retrieve databases: %v", err)
-		result := &v2.CreateAccountResponse_ActionRequiredResult{
-			Message:               errMsg,
-			IsCreateAccountResult: true,
-		}
-		return result, nil, nil, nil
-	}
-
-	// Create user in each database
-	var dbsCreated []string
-	for _, db := range databases {
-		// Skip system databases
-		if db.Name == "master" || db.Name == "tempdb" || db.Name == "model" || db.Name == "msdb" {
-			continue
-		}
-
-		err = d.client.CreateDatabaseUserForPrincipal(ctx, db.Name, formattedUsername)
-		if err != nil {
-			l.Error("Failed to create user in database",
-				zap.String("database", db.Name),
-				zap.String("user", formattedUsername),
-				zap.Error(err))
-			errMsg := fmt.Sprintf("Login created successfully, but failed to create user in some databases: %v", err)
-			result := &v2.CreateAccountResponse_ActionRequiredResult{
-				Message:               errMsg,
-				IsCreateAccountResult: true,
-			}
-			return result, nil, nil, nil
-		}
-		dbsCreated = append(dbsCreated, db.Name)
-	}
-
 	// Create a resource for the newly created login
 	profile := map[string]interface{}{
 		"username":        username,
 		"domain":          domain,
 		"formatted_login": formattedUsername,
-		"databases":       dbsCreated,
 	}
 
 	// Use email as name if it looks like an email address
