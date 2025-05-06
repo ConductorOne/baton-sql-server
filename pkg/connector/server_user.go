@@ -2,7 +2,9 @@ package connector
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
+	"math/big"
 	"net/mail"
 
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
@@ -129,12 +131,9 @@ func (d *userPrincipalSyncer) CreateAccount(
 			formattedUsername = username
 		}
 	case mssqldb.LoginTypeSQL:
-		// For SQL auth, extract password
-		passwordVal := accountInfo.Profile.GetFields()["password"]
-		if passwordVal == nil || passwordVal.GetStringValue() == "" {
-			return nil, nil, nil, fmt.Errorf("missing required password field for SQL Server authentication")
-		}
-		password = passwordVal.GetStringValue()
+		// For SQL auth, generate a strong random password
+		password = generateStrongPassword()
+		l.Debug("generated random password for SQL Server authentication")
 		formattedUsername = username
 	case mssqldb.LoginTypeAzureAD, mssqldb.LoginTypeEntraID:
 		// For Azure AD or Entra ID, just use the username as is
@@ -183,13 +182,26 @@ func (d *userPrincipalSyncer) CreateAccount(
 		return nil, nil, nil, fmt.Errorf("failed to create resource for new user: %w", err)
 	}
 
-	// Return success result with the new user resource
+	// Prepare the response - for SQL auth, we need to return the generated password
 	successResult := &v2.CreateAccountResponse_SuccessResult{
 		Resource:              resource,
 		IsCreateAccountResult: true,
 	}
 
-	return successResult, nil, nil, nil
+	var plaintextData []*v2.PlaintextData
+	// If this is SQL authentication, return the generated password
+	if loginType == mssqldb.LoginTypeSQL {
+		plaintextData = []*v2.PlaintextData{
+			{
+				Name:        "password",
+				Description: "The generated password for SQL Server authentication",
+				Schema:      "text/plain",
+				Bytes:       []byte(password),
+			},
+		}
+	}
+
+	return successResult, plaintextData, nil, nil
 }
 
 // CreateAccountCapabilityDetails returns the capability details for account creation.
@@ -198,10 +210,58 @@ func (d *userPrincipalSyncer) CreateAccountCapabilityDetails(
 ) (*v2.CredentialDetailsAccountProvisioning, annotations.Annotations, error) {
 	return &v2.CredentialDetailsAccountProvisioning{
 		SupportedCredentialOptions: []v2.CapabilityDetailCredentialOption{
-			v2.CapabilityDetailCredentialOption_CAPABILITY_DETAIL_CREDENTIAL_OPTION_NO_PASSWORD,
+			v2.CapabilityDetailCredentialOption_CAPABILITY_DETAIL_CREDENTIAL_OPTION_NO_PASSWORD,     // For Windows/Azure AD/Entra ID
+			v2.CapabilityDetailCredentialOption_CAPABILITY_DETAIL_CREDENTIAL_OPTION_RANDOM_PASSWORD, // For SQL Server auth
 		},
 		PreferredCredentialOption: v2.CapabilityDetailCredentialOption_CAPABILITY_DETAIL_CREDENTIAL_OPTION_NO_PASSWORD,
 	}, nil, nil
+}
+
+// generateStrongPassword creates a secure random password for SQL Server.
+// The password meets SQL Server complexity requirements:
+// - At least 8 characters in length
+// - Contains uppercase, lowercase, numbers, and special characters.
+func generateStrongPassword() string {
+	const (
+		uppercaseChars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+		lowercaseChars = "abcdefghijklmnopqrstuvwxyz"
+		numberChars    = "0123456789"
+		specialChars   = "!@#$%^&*()-_=+[]{}|;:,.<>?"
+		passwordLength = 16
+	)
+
+	// Ensure at least one character from each category
+	password := make([]byte, passwordLength)
+
+	// Add at least one character from each required group
+	addRandomChar := func(charSet string, position int) {
+		maxVal := big.NewInt(int64(len(charSet)))
+		randomIndex, _ := rand.Int(rand.Reader, maxVal)
+		password[position] = charSet[randomIndex.Int64()]
+	}
+
+	// Add one of each required character type
+	addRandomChar(uppercaseChars, 0)
+	addRandomChar(lowercaseChars, 1)
+	addRandomChar(numberChars, 2)
+	addRandomChar(specialChars, 3)
+
+	// Fill the rest with random characters from all sets
+	allChars := uppercaseChars + lowercaseChars + numberChars + specialChars
+	for i := 4; i < passwordLength; i++ {
+		maxVal := big.NewInt(int64(len(allChars)))
+		randomIndex, _ := rand.Int(rand.Reader, maxVal)
+		password[i] = allChars[randomIndex.Int64()]
+	}
+
+	// Shuffle the password to avoid predictable positions of character types
+	for i := passwordLength - 1; i > 0; i-- {
+		maxVal := big.NewInt(int64(i + 1))
+		j, _ := rand.Int(rand.Reader, maxVal)
+		password[i], password[j.Int64()] = password[j.Int64()], password[i]
+	}
+
+	return string(password)
 }
 
 func newUserPrincipalSyncer(ctx context.Context, c *mssqldb.Client) *userPrincipalSyncer {

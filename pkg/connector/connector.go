@@ -67,16 +67,6 @@ func (o *Mssqldb) Metadata(ctx context.Context) (*v2.ConnectorMetadata, error) {
 					Placeholder: "username",
 					Order:       3,
 				},
-				"password": {
-					DisplayName: "Password",
-					Required:    false,
-					Description: "The password for SQL Server authentication. Required when using SQL Server Authentication.",
-					Field: &v2.ConnectorAccountCreationSchema_Field_StringField{
-						StringField: &v2.ConnectorAccountCreationSchema_StringField{},
-					},
-					Placeholder: "password",
-					Order:       4,
-				},
 			},
 		},
 	}, nil
