@@ -87,7 +87,7 @@ func (d *userPrincipalSyncer) Grants(ctx context.Context, resource *v2.Resource,
 	return nil, "", nil, nil
 }
 
-// CreateAccount creates a SQL Server login for an Active Directory user without adding database users.
+// CreateAccount creates a SQL Server login based on the specified login type.
 // It implements the AccountManager interface.
 func (d *userPrincipalSyncer) CreateAccount(
 	ctx context.Context,
@@ -96,6 +96,14 @@ func (d *userPrincipalSyncer) CreateAccount(
 ) (connectorbuilder.CreateAccountResponse, []*v2.PlaintextData, annotations.Annotations, error) {
 	l := ctxzap.Extract(ctx)
 
+	// Extract required login_type field from profile
+	loginTypeVal := accountInfo.Profile.GetFields()["login_type"]
+	if loginTypeVal == nil || loginTypeVal.GetStringValue() == "" {
+		return nil, nil, nil, fmt.Errorf("missing required login_type field")
+	}
+	loginTypeStr := loginTypeVal.GetStringValue()
+	loginType := mssqldb.LoginType(loginTypeStr)
+
 	// Extract required username field from profile
 	usernameVal := accountInfo.Profile.GetFields()["username"]
 	if usernameVal == nil || usernameVal.GetStringValue() == "" {
@@ -103,33 +111,55 @@ func (d *userPrincipalSyncer) CreateAccount(
 	}
 	username := usernameVal.GetStringValue()
 
-	// Extract optional domain field from profile
-	var domain string
-	domainVal := accountInfo.Profile.GetFields()["domain"]
-	if domainVal != nil && domainVal.GetStringValue() != "" {
-		domain = domainVal.GetStringValue()
-	}
-
-	// Create the Windows login
-	err := d.client.CreateWindowsLogin(ctx, domain, username)
-	if err != nil {
-		l.Error("Failed to create Windows login", zap.Error(err))
-		return nil, nil, nil, fmt.Errorf("failed to create Windows login: %w", err)
-	}
-
-	// Determine the formatted username for the login
+	// Extract optional domain field (for Windows auth) or password (for SQL auth)
+	var domain, password string
 	var formattedUsername string
-	if domain != "" {
-		formattedUsername = fmt.Sprintf("%s\\%s", domain, username)
-	} else {
+
+	switch loginType {
+	case mssqldb.LoginTypeWindows:
+		// For Windows auth, extract domain
+		domainVal := accountInfo.Profile.GetFields()["domain"]
+		if domainVal != nil && domainVal.GetStringValue() != "" {
+			domain = domainVal.GetStringValue()
+		}
+
+		if domain != "" {
+			formattedUsername = fmt.Sprintf("%s\\%s", domain, username)
+		} else {
+			formattedUsername = username
+		}
+	case mssqldb.LoginTypeSQL:
+		// For SQL auth, extract password
+		passwordVal := accountInfo.Profile.GetFields()["password"]
+		if passwordVal == nil || passwordVal.GetStringValue() == "" {
+			return nil, nil, nil, fmt.Errorf("missing required password field for SQL Server authentication")
+		}
+		password = passwordVal.GetStringValue()
 		formattedUsername = username
+	case mssqldb.LoginTypeAzureAD, mssqldb.LoginTypeEntraID:
+		// For Azure AD or Entra ID, just use the username as is
+		formattedUsername = username
+	default:
+		return nil, nil, nil, fmt.Errorf("unsupported login type: %s", loginType)
+	}
+
+	// Create the login
+	err := d.client.CreateLogin(ctx, loginType, domain, username, password)
+	if err != nil {
+		l.Error("Failed to create login", zap.Error(err), zap.String("loginType", string(loginType)))
+		return nil, nil, nil, fmt.Errorf("failed to create login: %w", err)
 	}
 
 	// Create a resource for the newly created login
 	profile := map[string]interface{}{
 		"username":        username,
-		"domain":          domain,
+		"login_type":      string(loginType),
 		"formatted_login": formattedUsername,
+	}
+
+	// Add domain if it exists (for Windows auth)
+	if domain != "" {
+		profile["domain"] = domain
 	}
 
 	// Use email as name if it looks like an email address

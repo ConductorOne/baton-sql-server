@@ -307,10 +307,37 @@ CREATE USER [%s] FOR LOGIN [%s];
 	return nil
 }
 
-// CreateWindowsLogin creates a SQL Server login from Windows AD for the specified domain and username.
-// If domain is provided, it will create the login in the format [DOMAIN\Username],
-// otherwise it will use just [Username].
-func (c *Client) CreateWindowsLogin(ctx context.Context, domain, username string) error {
+// LoginType represents the SQL Server login type.
+type LoginType string
+
+const (
+	// LoginTypeWindows represents Windows authentication.
+	LoginTypeWindows LoginType = "WINDOWS"
+	// LoginTypeSQL represents SQL Server authentication.
+	LoginTypeSQL LoginType = "SQL"
+	// LoginTypeAzureAD represents Azure AD authentication.
+	LoginTypeAzureAD LoginType = "AZURE_AD"
+	// LoginTypeEntraID represents Azure Entra ID authentication.
+	LoginTypeEntraID LoginType = "ENTRA_ID"
+)
+
+// CreateLogin creates a SQL Server login with the specified authentication type.
+// For Windows authentication (loginType=WINDOWS):
+//   - If domain is provided, it will create the login in the format [DOMAIN\Username]
+//   - otherwise it will use just [Username]
+//
+// For SQL authentication (loginType=SQL):
+//   - It requires a password
+//   - Domain is ignored
+//
+// For Azure AD authentication (loginType=AZURE_AD):
+//   - It creates from EXTERNAL PROVIDER
+//   - Username should be the full Azure AD username/email
+//
+// For Entra ID authentication (loginType=ENTRA_ID):
+//   - It creates from EXTERNAL PROVIDER
+//   - Username should be the full Entra ID username/email
+func (c *Client) CreateLogin(ctx context.Context, loginType LoginType, domain, username, password string) error {
 	l := ctxzap.Extract(ctx)
 
 	// Check for invalid characters to prevent SQL injection
@@ -318,23 +345,49 @@ func (c *Client) CreateWindowsLogin(ctx context.Context, domain, username string
 		return fmt.Errorf("invalid characters in domain or username")
 	}
 
-	var loginName string
-	if domain != "" {
-		loginName = fmt.Sprintf("[%s\\%s]", domain, username)
-		l.Debug("creating windows login with domain", zap.String("login", loginName))
-	} else {
-		loginName = fmt.Sprintf("[%s]", username)
-		l.Debug("creating windows login without domain", zap.String("login", loginName))
+	var query string
+	switch loginType {
+	case LoginTypeWindows:
+		var loginName string
+		if domain != "" {
+			loginName = fmt.Sprintf("[%s\\%s]", domain, username)
+			l.Debug("creating windows login with domain", zap.String("login", loginName))
+		} else {
+			loginName = fmt.Sprintf("[%s]", username)
+			l.Debug("creating windows login without domain", zap.String("login", loginName))
+		}
+		query = fmt.Sprintf("CREATE LOGIN %s FROM WINDOWS;", loginName)
+	case LoginTypeSQL:
+		if password == "" {
+			return fmt.Errorf("password is required for SQL Server authentication")
+		}
+		// For SQL Server authentication, only username and password are used
+		loginName := fmt.Sprintf("[%s]", username)
+		l.Debug("creating SQL login", zap.String("login", loginName))
+		query = fmt.Sprintf("CREATE LOGIN %s WITH PASSWORD = '%s';", loginName, password)
+	case LoginTypeAzureAD, LoginTypeEntraID:
+		// Azure AD and Entra ID use external provider
+		loginName := fmt.Sprintf("[%s]", username)
+		l.Debug("creating external provider login", zap.String("login", loginName), zap.String("type", string(loginType)))
+		query = fmt.Sprintf("CREATE LOGIN %s FROM EXTERNAL PROVIDER;", loginName)
+	default:
+		return fmt.Errorf("unsupported login type: %s", loginType)
 	}
-
-	query := fmt.Sprintf("CREATE LOGIN %s FROM WINDOWS;", loginName)
 
 	l.Debug("SQL QUERY", zap.String("q", query))
 
 	_, err := c.db.ExecContext(ctx, query)
 	if err != nil {
-		return fmt.Errorf("failed to create Windows login: %w", err)
+		return fmt.Errorf("failed to create login: %w", err)
 	}
 
 	return nil
+}
+
+// CreateWindowsLogin creates a SQL Server login from Windows AD for the specified domain and username.
+// If domain is provided, it will create the login in the format [DOMAIN\Username],
+// otherwise it will use just [Username].
+// This is a convenience method that calls CreateLogin with LoginTypeWindows.
+func (c *Client) CreateWindowsLogin(ctx context.Context, domain, username string) error {
+	return c.CreateLogin(ctx, LoginTypeWindows, domain, username, "")
 }
