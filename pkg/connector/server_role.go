@@ -204,6 +204,7 @@ func (d *serverRolePrincipalSyncer) Grant(ctx context.Context, resource *v2.Reso
 
 	// database-role:baton_test:6:member
 	splitId := strings.Split(entitlement.Id, ":")
+	// id length is 3
 	if len(splitId) != 3 {
 		return nil, nil, fmt.Errorf("unexpected entitlement id: %s", entitlement.Id)
 	}
