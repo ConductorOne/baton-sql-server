@@ -204,7 +204,7 @@ func (d *serverRolePrincipalSyncer) Grant(ctx context.Context, resource *v2.Reso
 
 	// database-role:baton_test:6:member
 	splitId := strings.Split(entitlement.Id, ":")
-	if len(splitId) != 4 {
+	if len(splitId) != 3 {
 		return nil, nil, fmt.Errorf("unexpected entitlement id: %s", entitlement.Id)
 	}
 
@@ -242,7 +242,7 @@ func (d *serverRolePrincipalSyncer) Revoke(ctx context.Context, grant *v2.Grant)
 
 	// database-role:baton_test:6:member
 	splitId := strings.Split(grant.Entitlement.Id, ":")
-	if len(splitId) != 4 {
+	if len(splitId) != 3 {
 		return nil, fmt.Errorf("unexpected entitlement id: %s", grant.Entitlement.Id)
 	}
 
