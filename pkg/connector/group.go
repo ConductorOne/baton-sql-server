@@ -32,7 +32,7 @@ func (d *groupPrincipalSyncer) List(ctx context.Context, parentResourceID *v2.Re
 
 	var ret []*v2.Resource
 	for _, principalModel := range principals {
-		r, err := resource.NewUserResource(
+		r, err := resource.NewGroupResource(
 			principalModel.Name,
 			d.ResourceType(ctx),
 			principalModel.ID,
