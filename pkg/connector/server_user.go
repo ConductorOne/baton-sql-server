@@ -19,6 +19,8 @@ import (
 	"go.uber.org/zap"
 )
 
+var _ connectorbuilder.ResourceDeleter = (*userPrincipalSyncer)(nil)
+
 // userPrincipalSyncer implements both ResourceSyncer and AccountManager.
 type userPrincipalSyncer struct {
 	resourceType *v2.ResourceType
@@ -215,6 +217,19 @@ func (d *userPrincipalSyncer) CreateAccountCapabilityDetails(
 		},
 		PreferredCredentialOption: v2.CapabilityDetailCredentialOption_CAPABILITY_DETAIL_CREDENTIAL_OPTION_NO_PASSWORD,
 	}, nil, nil
+}
+
+func (d *userPrincipalSyncer) Delete(ctx context.Context, resourceId *v2.ResourceId) (annotations.Annotations, error) {
+	user, err := d.client.GetUserPrincipal(ctx, resourceId.GetResource())
+	if err != nil {
+		return nil, err
+	}
+
+	err = d.client.DisableUserFromServer(ctx, user.Name)
+	if err != nil {
+		return nil, err
+	}
+	return nil, err
 }
 
 // generateStrongPassword creates a secure random password for SQL Server.
