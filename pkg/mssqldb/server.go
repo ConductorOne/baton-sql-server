@@ -36,6 +36,10 @@ func (c *Client) GetServer(ctx context.Context) (*ServerModel, error) {
 }
 
 func (c *Client) DisableUserFromServer(ctx context.Context, userName string) error {
+	if strings.ContainsAny(userName, "[]\"';") {
+		return fmt.Errorf("invalid characters in userName")
+	}
+
 	query := fmt.Sprintf(`
 ALTER LOGIN [%s] DISABLE;`, userName)
 

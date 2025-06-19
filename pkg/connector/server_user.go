@@ -229,7 +229,7 @@ func (d *userPrincipalSyncer) Delete(ctx context.Context, resourceId *v2.Resourc
 	if err != nil {
 		return nil, err
 	}
-	return nil, err
+	return nil, nil
 }
 
 // generateStrongPassword creates a secure random password for SQL Server.
