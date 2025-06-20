@@ -2,6 +2,7 @@ package mssqldb
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
@@ -32,4 +33,19 @@ func (c *Client) GetServer(ctx context.Context) (*ServerModel, error) {
 	}
 
 	return &ret, nil
+}
+
+func (c *Client) DisableUserFromServer(ctx context.Context, userName string) error {
+	if strings.ContainsAny(userName, "[]\"';") {
+		return fmt.Errorf("invalid characters in userName")
+	}
+
+	query := fmt.Sprintf(`
+ALTER LOGIN [%s] DISABLE;`, userName)
+
+	_, err := c.db.ExecContext(ctx, query)
+	if err != nil {
+		return err
+	}
+	return nil
 }
