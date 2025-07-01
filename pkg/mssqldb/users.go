@@ -223,6 +223,9 @@ WHERE
 `
 
 	rows := c.db.QueryRowxContext(ctx, query, userId)
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 
 	var userModel UserModel
 	err := rows.StructScan(&userModel)
@@ -307,6 +310,9 @@ AND sp.principal_id = @p1
 	query = fmt.Sprintf(query, db)
 
 	row := c.db.QueryRowxContext(ctx, query, principalId)
+	if err := row.Err(); err != nil {
+		return nil, err
+	}
 
 	var userModel UserDBModel
 	err := row.StructScan(&userModel)

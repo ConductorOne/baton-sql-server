@@ -280,6 +280,9 @@ WHERE type = 'R' AND principal_id = @p1
 
 	var roleModel RoleModel
 	row := c.db.QueryRowxContext(ctx, query, id)
+	if err := row.Err(); err != nil {
+		return nil, err
+	}
 
 	err := row.StructScan(&roleModel)
 	if err != nil {
@@ -315,6 +318,9 @@ WHERE type = 'R' AND principal_id = @p1
 
 	var roleModel RoleModel
 	row := c.db.QueryRowxContext(ctx, query, id)
+	if err := row.Err(); err != nil {
+		return nil, err
+	}
 
 	err := row.StructScan(&roleModel)
 	if err != nil {
