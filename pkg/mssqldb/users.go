@@ -260,6 +260,9 @@ WHERE
 `
 
 	rows := c.db.QueryRowxContext(ctx, query, name)
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 
 	var userModel UserModel
 	err := rows.StructScan(&userModel)
