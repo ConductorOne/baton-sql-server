@@ -223,12 +223,55 @@ WHERE
 `
 
 	rows := c.db.QueryRowxContext(ctx, query, userId)
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 
 	var userModel UserModel
 	err := rows.StructScan(&userModel)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, fmt.Errorf("user not found: %s", userId)
+		}
+		return nil, err
+	}
+
+	return &userModel, nil
+}
+
+func (c *Client) GetUserPrincipalByName(ctx context.Context, name string) (*UserModel, error) {
+	l := ctxzap.Extract(ctx)
+	l.Debug("getting user")
+
+	query := `
+SELECT
+    principal_id,
+    sid,
+    name,
+    type_desc,
+    is_disabled
+FROM
+    sys.server_principals
+WHERE
+    (
+		type = 'S'
+		OR type = 'U'
+		OR type = 'C'
+		OR type = 'E'
+		OR type = 'K'
+	) AND name = @p1
+`
+
+	rows := c.db.QueryRowxContext(ctx, query, name)
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	var userModel UserModel
+	err := rows.StructScan(&userModel)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, fmt.Errorf("user name not found: %s", name)
 		}
 		return nil, err
 	}
@@ -267,6 +310,9 @@ AND sp.principal_id = @p1
 	query = fmt.Sprintf(query, db)
 
 	row := c.db.QueryRowxContext(ctx, query, principalId)
+	if err := row.Err(); err != nil {
+		return nil, err
+	}
 
 	var userModel UserDBModel
 	err := row.StructScan(&userModel)
