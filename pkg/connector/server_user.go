@@ -151,6 +151,11 @@ func (d *userPrincipalSyncer) CreateAccount(
 		return nil, nil, nil, fmt.Errorf("failed to create login: %w", err)
 	}
 
+	uid, err := d.client.GetUserPrincipalByName(ctx, username)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to get user: w", err)
+	}
+
 	// Create a resource for the newly created login
 	profile := map[string]interface{}{
 		"username":        username,
@@ -176,7 +181,7 @@ func (d *userPrincipalSyncer) CreateAccount(
 	resource, err := resource.NewUserResource(
 		formattedUsername,
 		d.ResourceType(ctx),
-		formattedUsername, // Use the formatted username as the ID
+		uid.ID,
 		userOpts,
 	)
 	if err != nil {

@@ -324,17 +324,22 @@ WHERE type = 'R' AND principal_id = @p1
 	return &roleModel, err
 }
 
-func (c *Client) AddUserToServerRole(ctx context.Context, role string, user string) error {
+func (c *Client) AddUserToServerRole(ctx context.Context, role string, userID string) error {
 	l := ctxzap.Extract(ctx)
-	l.Debug("adding user to database role", zap.String("role", role), zap.String("user", user))
+	l.Debug("adding user to database role", zap.String("role", role), zap.String("userID", userID))
 
-	if strings.ContainsAny(role, "[]\"';") || strings.ContainsAny(user, "[]\"';") {
+	if strings.ContainsAny(role, "[]\"';") || strings.ContainsAny(userID, "[]\"';") {
 		return fmt.Errorf("invalid characters in role or user")
 	}
 
-	query := fmt.Sprintf(`ALTER SERVER ROLE [%s] ADD MEMBER [%s];`, role, user)
+	user, err := c.GetUserPrincipal(ctx, userID)
+	if err != nil {
+		return fmt.Errorf("cannot get user: %w", err)
+	}
 
-	_, err := c.db.ExecContext(ctx, query)
+	query := fmt.Sprintf(`ALTER SERVER ROLE [%s] ADD MEMBER [%s];`, role, user.Name)
+
+	_, err = c.db.ExecContext(ctx, query)
 	if err != nil {
 		return err
 	}

@@ -236,6 +236,43 @@ WHERE
 	return &userModel, nil
 }
 
+func (c *Client) GetUserPrincipalByName(ctx context.Context, name string) (*UserModel, error) {
+	l := ctxzap.Extract(ctx)
+	l.Debug("getting user")
+
+	query := `
+SELECT
+    principal_id,
+    sid,
+    name,
+    type_desc,
+    is_disabled
+FROM
+    sys.server_principals
+WHERE
+    (
+		type = 'S'
+		OR type = 'U'
+		OR type = 'C'
+		OR type = 'E'
+		OR type = 'K'
+	) AND name = @p1
+`
+
+	rows := c.db.QueryRowxContext(ctx, query, name)
+
+	var userModel UserModel
+	err := rows.StructScan(&userModel)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, fmt.Errorf("user name not found: %s", name)
+		}
+		return nil, err
+	}
+
+	return &userModel, nil
+}
+
 // GetUserFromDb find db user from Server principal.
 func (c *Client) GetUserFromDb(ctx context.Context, db, principalId string) (*UserDBModel, error) {
 	l := ctxzap.Extract(ctx)
