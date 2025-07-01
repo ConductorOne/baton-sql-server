@@ -153,7 +153,7 @@ func (d *userPrincipalSyncer) CreateAccount(
 
 	uid, err := d.client.GetUserPrincipalByName(ctx, username)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to get user: w", err)
+		return nil, nil, nil, fmt.Errorf("failed to get user: %w", err)
 	}
 
 	// Create a resource for the newly created login
