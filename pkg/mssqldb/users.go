@@ -383,26 +383,15 @@ const (
 // For Entra ID authentication (loginType=ENTRA_ID):
 //   - It creates from EXTERNAL PROVIDER
 //   - Username should be the full Entra ID username/email
-func (c *Client) CreateLogin(ctx context.Context, loginType LoginType, domain, username, password string) error {
+func (c *Client) CreateLogin(ctx context.Context, loginType LoginType, username, password string) error {
 	l := ctxzap.Extract(ctx)
-
-	// Check for invalid characters to prevent SQL injection
-	if (domain != "" && strings.ContainsAny(domain, "[]\"';")) || strings.ContainsAny(username, "[]\"';") {
-		return fmt.Errorf("invalid characters in domain or username")
-	}
 
 	var query string
 	switch loginType {
 	case LoginTypeWindows:
-		var loginName string
-		if domain != "" {
-			loginName = fmt.Sprintf("[%s\\%s]", domain, username)
-			l.Debug("creating windows login with domain", zap.String("login", loginName))
-		} else {
-			loginName = fmt.Sprintf("[%s]", username)
-			l.Debug("creating windows login without domain", zap.String("login", loginName))
-		}
-		query = fmt.Sprintf("CREATE LOGIN %s FROM WINDOWS;", loginName)
+		loginName := fmt.Sprintf("[%s]", username)
+		l.Debug("creating windows login", zap.String("login", loginName))
+		query = fmt.Sprintf("CREATE LOGIN %s FROM WINDOWS;", username)
 	case LoginTypeSQL:
 		if password == "" {
 			return fmt.Errorf("password is required for SQL Server authentication")
@@ -428,12 +417,4 @@ func (c *Client) CreateLogin(ctx context.Context, loginType LoginType, domain, u
 	}
 
 	return nil
-}
-
-// CreateWindowsLogin creates a SQL Server login from Windows AD for the specified domain and username.
-// If domain is provided, it will create the login in the format [DOMAIN\Username],
-// otherwise it will use just [Username].
-// This is a convenience method that calls CreateLogin with LoginTypeWindows.
-func (c *Client) CreateWindowsLogin(ctx context.Context, domain, username string) error {
-	return c.CreateLogin(ctx, LoginTypeWindows, domain, username, "")
 }
