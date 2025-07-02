@@ -391,7 +391,7 @@ func (c *Client) CreateLogin(ctx context.Context, loginType LoginType, username,
 	case LoginTypeWindows:
 		loginName := fmt.Sprintf("[%s]", username)
 		l.Debug("creating windows login", zap.String("login", loginName))
-		query = fmt.Sprintf("CREATE LOGIN %s FROM WINDOWS;", username)
+		query = fmt.Sprintf("CREATE LOGIN %s FROM WINDOWS;", loginName)
 	case LoginTypeSQL:
 		if password == "" {
 			return fmt.Errorf("password is required for SQL Server authentication")
