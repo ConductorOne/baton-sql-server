@@ -36,7 +36,7 @@ func main() {
 		}
 	}
 
-	_, cmd, err := config.DefineConfiguration(ctx, "baton-sql-server", getConnector, cfg)
+	_, cmd, err := config.DefineConfiguration(ctx, connectorName, getConnector, cfg)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err.Error())
 		os.Exit(1)
