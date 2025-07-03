@@ -35,13 +35,13 @@ func (c *Client) GetServer(ctx context.Context) (*ServerModel, error) {
 	return &ret, nil
 }
 
-func (c *Client) DisableUserFromServer(ctx context.Context, userName string) error {
+func (c *Client) DeleteUserFromServer(ctx context.Context, userName string) error {
 	if strings.ContainsAny(userName, "[]\"';") {
 		return fmt.Errorf("invalid characters in userName")
 	}
 
 	query := fmt.Sprintf(`
-ALTER LOGIN [%s] DISABLE;`, userName)
+DROP LOGIN [%s];`, userName)
 
 	_, err := c.db.ExecContext(ctx, query)
 	if err != nil {
