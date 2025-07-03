@@ -249,7 +249,7 @@ func (d *userPrincipalSyncer) Delete(ctx context.Context, resourceId *v2.Resourc
 		return nil, err
 	}
 
-	err = d.client.DisableUserFromServer(ctx, user.Name)
+	err = d.client.DeleteUserFromServer(ctx, user.Name)
 	if err != nil {
 		return nil, err
 	}
