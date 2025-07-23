@@ -23,7 +23,7 @@ var (
 	resourceTypeGroup = &v2.ResourceType{
 		Id:          mssqldb.GroupType,
 		DisplayName: "Group",
-		Traits:      []v2.ResourceType_Trait{v2.ResourceType_TRAIT_USER, v2.ResourceType_TRAIT_GROUP},
+		Traits:      []v2.ResourceType_Trait{v2.ResourceType_TRAIT_GROUP, v2.ResourceType_TRAIT_USER},
 	}
 	resourceTypeServerRole = &v2.ResourceType{
 		Id:          mssqldb.ServerRoleType,

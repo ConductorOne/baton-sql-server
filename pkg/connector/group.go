@@ -32,13 +32,32 @@ func (d *groupPrincipalSyncer) List(ctx context.Context, parentResourceID *v2.Re
 
 	var ret []*v2.Resource
 	for _, principalModel := range principals {
-		r, err := resource.NewGroupResource(
+		var annos annotations.Annotations
+
+		traitOptions := []resource.UserTraitOption{
+			resource.WithStatus(v2.UserTrait_Status_STATUS_ENABLED),
+		}
+
+		ut, err := resource.NewUserTrait(traitOptions...)
+		if err != nil {
+			return nil, "", nil, err
+		}
+		annos.Update(ut)
+
+		gt, err := resource.NewGroupTrait()
+		if err != nil {
+			return nil, "", nil, err
+		}
+		annos.Update(gt)
+
+		r, err := resource.NewResource(
 			principalModel.Name,
 			d.ResourceType(ctx),
 			principalModel.ID,
-			nil,
 			resource.WithParentResourceID(parentResourceID),
 		)
+		r.Annotations = annos
+
 		if err != nil {
 			return nil, "", nil, err
 		}
