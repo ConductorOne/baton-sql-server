@@ -38,6 +38,7 @@ func (d *groupPrincipalSyncer) List(ctx context.Context, parentResourceID *v2.Re
 			principalModel.ID,
 			nil,
 			resource.WithParentResourceID(parentResourceID),
+			resource.WithUserTrait(resource.WithStatus(v2.UserTrait_Status_STATUS_ENABLED)),
 		)
 
 		if err != nil {
