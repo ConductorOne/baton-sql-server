@@ -62,7 +62,7 @@ func (d *serverRolePrincipalSyncer) Entitlements(ctx context.Context, resource *
 	ret = append(ret, enTypes.NewAssignmentEntitlement(
 		resource,
 		"member",
-		enTypes.WithGrantableTo(resourceTypeUser),
+		enTypes.WithGrantableTo(resourceTypeUser, resourceTypeGroup, resourceTypeServerRole),
 	))
 
 	return ret, "", nil, nil

@@ -72,7 +72,7 @@ func (d *databaseSyncer) Entitlements(ctx context.Context, resource *v2.Resource
 				Slug:        name,
 				Purpose:     v2.Entitlement_PURPOSE_VALUE_PERMISSION,
 				Resource:    resource,
-				GrantableTo: []*v2.ResourceType{resourceTypeUser},
+				GrantableTo: []*v2.ResourceType{resourceTypeUser, resourceTypeGroup, resourceTypeDatabaseRole},
 			},
 			&v2.Entitlement{
 				Id:          enTypes.NewEntitlementID(resource, key+"-grant"),
@@ -80,7 +80,7 @@ func (d *databaseSyncer) Entitlements(ctx context.Context, resource *v2.Resource
 				Slug:        grantSlug,
 				Purpose:     v2.Entitlement_PURPOSE_VALUE_PERMISSION,
 				Resource:    resource,
-				GrantableTo: []*v2.ResourceType{resourceTypeUser},
+				GrantableTo: []*v2.ResourceType{resourceTypeUser, resourceTypeGroup, resourceTypeDatabaseRole},
 			})
 	}
 

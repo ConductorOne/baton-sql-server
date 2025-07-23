@@ -99,6 +99,7 @@ func (d *serverSyncer) Entitlements(ctx context.Context, resource *v2.Resource, 
 			Slug:        name,
 			Purpose:     v2.Entitlement_PURPOSE_VALUE_PERMISSION,
 			Resource:    resource,
+			GrantableTo: []*v2.ResourceType{resourceTypeUser, resourceTypeGroup, resourceTypeServerRole},
 		})
 		ret = append(ret, &v2.Entitlement{
 			Id:          enTypes.NewEntitlementID(resource, key+"-grant"),
@@ -106,6 +107,7 @@ func (d *serverSyncer) Entitlements(ctx context.Context, resource *v2.Resource, 
 			Slug:        fmt.Sprintf("%s (With Grant)", name),
 			Purpose:     v2.Entitlement_PURPOSE_VALUE_PERMISSION,
 			Resource:    resource,
+			GrantableTo: []*v2.ResourceType{resourceTypeUser, resourceTypeGroup, resourceTypeServerRole},
 		})
 	}
 

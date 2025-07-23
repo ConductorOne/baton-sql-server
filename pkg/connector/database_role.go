@@ -74,7 +74,8 @@ func (d *databaseRolePrincipalSyncer) List(ctx context.Context, parentResourceID
 func (d *databaseRolePrincipalSyncer) Entitlements(ctx context.Context, resource *v2.Resource, pToken *pagination.Token) ([]*v2.Entitlement, string, annotations.Annotations, error) {
 	var ret []*v2.Entitlement
 
-	ret = append(ret, enTypes.NewAssignmentEntitlement(resource, "member"))
+	grantableTo := enTypes.WithGrantableTo(resourceTypeUser, resourceTypeGroup, resourceTypeDatabaseRole)
+	ret = append(ret, enTypes.NewAssignmentEntitlement(resource, "member", grantableTo))
 
 	return ret, "", nil, nil
 }
