@@ -143,15 +143,20 @@ func (d *databaseSyncer) Grants(ctx context.Context, resource *v2.Resource, pTok
 					return nil, "", nil, fmt.Errorf("unexpected resource type: %s", rt.Id)
 				}
 
+				grantOpts, err := BuildBatonIDGrantOptions(resourceID, p.PrincipalType, p.PrincipalName)
+				if err != nil {
+					return nil, "", nil, err
+				}
+
 				switch p.State {
 				case "G":
 					ret = append(ret, grTypes.NewGrant(resource, perm, &v2.Resource{
 						Id: resourceID,
-					}))
+					}, grantOpts...))
 				case "W":
 					ret = append(ret, grTypes.NewGrant(resource, perm+"-grant", &v2.Resource{
 						Id: resourceID,
-					}))
+					}, grantOpts...))
 				}
 			}
 		}
