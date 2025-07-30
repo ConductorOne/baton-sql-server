@@ -131,17 +131,22 @@ func (d *serverSyncer) Grants(ctx context.Context, resource *v2.Resource, pToken
 				if err != nil {
 					return nil, "", nil, err
 				}
+
+				principal := &v2.ResourceId{
+					ResourceType: rt.Id,
+					Resource:     strconv.FormatInt(p.PrincipalID, 10),
+				}
+
+				grantOpts, err := BuildBatonIDGrantOptions(principal, p.PrincipalType, p.PrincipalName)
+				if err != nil {
+					return nil, "", nil, err
+				}
+
 				switch p.State {
 				case "G":
-					ret = append(ret, grTypes.NewGrant(resource, perm, &v2.ResourceId{
-						ResourceType: rt.Id,
-						Resource:     strconv.FormatInt(p.PrincipalID, 10),
-					}))
+					ret = append(ret, grTypes.NewGrant(resource, perm, principal, grantOpts...))
 				case "W":
-					ret = append(ret, grTypes.NewGrant(resource, perm+"-grant", &v2.ResourceId{
-						ResourceType: rt.Id,
-						Resource:     strconv.FormatInt(p.PrincipalID, 10),
-					}))
+					ret = append(ret, grTypes.NewGrant(resource, perm+"-grant", principal, grantOpts...))
 				}
 			}
 		}
