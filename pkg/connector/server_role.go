@@ -193,7 +193,7 @@ func (d *serverRolePrincipalSyncer) Grants(ctx context.Context, resource *v2.Res
 				// Configure BatonID matching for Active Directory groups
 				grantOpts := []grTypes.GrantOption{
 					grTypes.WithAnnotation(&v2.ExternalResourceMatch{
-						Key:   "netbios_name",
+						Key:   "downlevel_logon_name",
 						Value: principal.Name,
 					}),
 					grTypes.WithAnnotation(&v2.GrantExpandable{
