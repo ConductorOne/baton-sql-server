@@ -217,7 +217,12 @@ func (d *databaseRolePrincipalSyncer) Grants(
 				return nil, "", nil, fmt.Errorf("invalid state: principalID is nil")
 			}
 
-			ret = append(ret, grTypes.NewGrant(resource, "member", principalID))
+			grantOpts, err := BuildBatonIDGrantOptions(principalID, dbPrincipal.Type, dbPrincipal.Name)
+			if err != nil {
+				return nil, "", nil, err
+			}
+
+			ret = append(ret, grTypes.NewGrant(resource, "member", principalID, grantOpts...))
 		}
 
 		visited[b.ResourceID()] = true
