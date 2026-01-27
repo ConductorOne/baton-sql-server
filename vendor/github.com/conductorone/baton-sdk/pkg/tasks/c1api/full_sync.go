@@ -11,8 +11,10 @@ import (
 	"go.uber.org/zap"
 	"google.golang.org/protobuf/proto"
 
+	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	v1 "github.com/conductorone/baton-sdk/pb/c1/connectorapi/baton/v1"
 	"github.com/conductorone/baton-sdk/pkg/annotations"
+	"github.com/conductorone/baton-sdk/pkg/session"
 	sdkSync "github.com/conductorone/baton-sdk/pkg/sync"
 	"github.com/conductorone/baton-sdk/pkg/tasks"
 	"github.com/conductorone/baton-sdk/pkg/types"
@@ -32,6 +34,8 @@ type fullSyncTaskHandler struct {
 	skipFullSync                        bool
 	externalResourceC1ZPath             string
 	externalResourceEntitlementIdFilter string
+	targetedSyncResources               []*v2.Resource
+	syncResourceTypeIDs                 []string
 }
 
 func (c *fullSyncTaskHandler) sync(ctx context.Context, c1zPath string) error {
@@ -40,9 +44,27 @@ func (c *fullSyncTaskHandler) sync(ctx context.Context, c1zPath string) error {
 
 	l := ctxzap.Extract(ctx).With(zap.String("task_id", c.task.GetId()), zap.Stringer("task_type", tasks.GetType(c.task)))
 
+	if c.task.GetSyncFull() == nil {
+		return errors.New("task is not a full sync task")
+	}
+
 	syncOpts := []sdkSync.SyncOpt{
 		sdkSync.WithC1ZPath(c1zPath),
 		sdkSync.WithTmpDir(c.helpers.TempDir()),
+	}
+
+	if c.task.GetSyncFull().GetSkipExpandGrants() {
+		// Have C1 expand grants. This is faster & results in a smaller c1z upload.
+		syncOpts = append(syncOpts, sdkSync.WithDontExpandGrants())
+	}
+
+	if resources := c.task.GetSyncFull().GetTargetedSyncResources(); len(resources) > 0 {
+		syncOpts = append(syncOpts, sdkSync.WithTargetedSyncResources(resources))
+	}
+
+	if c.task.GetSyncFull().GetSkipEntitlementsAndGrants() {
+		// Sync only resources. This is meant to be used for a first sync so initial data gets into the UI faster.
+		syncOpts = append(syncOpts, sdkSync.WithSkipEntitlementsAndGrants(true))
 	}
 
 	if c.externalResourceC1ZPath != "" {
@@ -57,7 +79,20 @@ func (c *fullSyncTaskHandler) sync(ctx context.Context, c1zPath string) error {
 		syncOpts = append(syncOpts, sdkSync.WithSkipFullSync())
 	}
 
-	syncer, err := sdkSync.NewSyncer(ctx, c.helpers.ConnectorClient(), syncOpts...)
+	if len(c.targetedSyncResources) > 0 {
+		syncOpts = append(syncOpts, sdkSync.WithTargetedSyncResources(c.targetedSyncResources))
+	}
+	cc := c.helpers.ConnectorClient()
+
+	if len(c.syncResourceTypeIDs) > 0 {
+		syncOpts = append(syncOpts, sdkSync.WithSyncResourceTypes(c.syncResourceTypeIDs))
+	}
+
+	if setSessionStore, ok := cc.(session.SetSessionStore); ok {
+		syncOpts = append(syncOpts, sdkSync.WithSessionStore(setSessionStore))
+	}
+
+	syncer, err := sdkSync.NewSyncer(ctx, cc, syncOpts...)
 	if err != nil {
 		l.Error("failed to create syncer", zap.Error(err))
 		return err
@@ -156,13 +191,23 @@ func (c *fullSyncTaskHandler) HandleTask(ctx context.Context) error {
 	return c.helpers.FinishTask(ctx, nil, nil, nil)
 }
 
-func newFullSyncTaskHandler(task *v1.Task, helpers fullSyncHelpers, skipFullSync bool, externalResourceC1ZPath string, externalResourceEntitlementIdFilter string) tasks.TaskHandler {
+func newFullSyncTaskHandler(
+	task *v1.Task,
+	helpers fullSyncHelpers,
+	skipFullSync bool,
+	externalResourceC1ZPath string,
+	externalResourceEntitlementIdFilter string,
+	targetedSyncResources []*v2.Resource,
+	syncResourceTypeIDs []string,
+) tasks.TaskHandler {
 	return &fullSyncTaskHandler{
 		task:                                task,
 		helpers:                             helpers,
 		skipFullSync:                        skipFullSync,
 		externalResourceC1ZPath:             externalResourceC1ZPath,
 		externalResourceEntitlementIdFilter: externalResourceEntitlementIdFilter,
+		targetedSyncResources:               targetedSyncResources,
+		syncResourceTypeIDs:                 syncResourceTypeIDs,
 	}
 }
 
@@ -172,35 +217,52 @@ func uploadDebugLogs(ctx context.Context, helper fullSyncHelpers) error {
 
 	l := ctxzap.Extract(ctx)
 
-	debugfilelocation := filepath.Join(helper.TempDir(), "debug.log")
+	tempDir := helper.TempDir()
+	if tempDir == "" {
+		wd, err := os.Getwd()
+		if err != nil {
+			l.Warn("unable to get the current working directory", zap.Error(err))
+		}
+		if wd != "" {
+			l.Warn("no temporary folder found on this system according to our sync helper,"+
+				" we may create files in the current working directory by mistake as a result",
+				zap.String("current working directory", wd))
+		} else {
+			l.Warn("no temporary folder found on this system according to our sync helper")
+		}
+	}
+	debugPath := filepath.Join(tempDir, "debug.log")
 
-	_, err := os.Stat(debugfilelocation)
+	_, err := os.Stat(debugPath)
 	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			l.Warn("debug log file does not exists", zap.Error(err))
-			return nil
+		switch {
+		case errors.Is(err, os.ErrNotExist):
+			l.Debug("debug log file does not exist", zap.Error(err))
+		case errors.Is(err, os.ErrPermission):
+			l.Warn("debug log file cannot be stat'd due to lack of permissions", zap.Error(err))
+		default:
+			l.Warn("cannot stat debug log file", zap.Error(err))
 		}
-		return err
-	} else {
-		debugfile, err := os.Open(debugfilelocation)
-		if err != nil {
-			return err
-		}
-		defer debugfile.Close()
-
-		l.Info("uploading debug logs", zap.String("file", debugfilelocation))
-		err = helper.Upload(ctx, debugfile)
-
-		if err != nil {
-			return err
-		}
-		defer func() {
-			err := os.Remove(debugfilelocation)
-			if err != nil {
-				l.Error("failed to delete file with debug logs", zap.Error(err), zap.String("file", debugfilelocation))
-			}
-		}()
-
 		return nil
 	}
+
+	debugfile, err := os.Open(debugPath)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		err := os.Remove(debugPath)
+		if err != nil {
+			l.Error("failed to delete file with debug logs", zap.Error(err), zap.String("file", debugPath))
+		}
+	}()
+	defer debugfile.Close()
+
+	l.Info("uploading debug logs", zap.String("file", debugPath))
+	err = helper.Upload(ctx, debugfile)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }

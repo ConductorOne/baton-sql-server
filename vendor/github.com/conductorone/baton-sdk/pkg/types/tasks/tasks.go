@@ -40,12 +40,16 @@ func (tt TaskType) String() string {
 		return "get_resource"
 	case ListEntitlementsType:
 		return "list_entitlements"
+	case ListStaticEntitlementsType:
+		return "list_static_entitlements"
 	case ListGrantsType:
 		return "list_grants"
 	case GetMetadataType:
 		return "get_metadata"
 	case ListEventsType:
 		return "list_events"
+	case ListEventFeedsType:
+		return "list_event_feeds"
 	case StartDebugging:
 		return "set_log_file_event"
 	case BulkCreateTicketsType:
@@ -60,6 +64,8 @@ func (tt TaskType) String() string {
 		return "invoke_action"
 	case ActionStatusType:
 		return "action_status"
+	case CreateSyncDiff:
+		return "create_sync_diff"
 	default:
 		return "unknown"
 	}
@@ -88,6 +94,7 @@ const (
 	ListGrantsType
 	GetMetadataType
 	ListEventsType
+	ListEventFeedsType
 	StartDebugging
 	BulkCreateTicketsType
 	BulkGetTicketsType
@@ -95,4 +102,6 @@ const (
 	ActionGetSchemaType
 	ActionInvokeType
 	ActionStatusType
+	CreateSyncDiff
+	ListStaticEntitlementsType
 )

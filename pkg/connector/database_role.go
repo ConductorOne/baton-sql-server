@@ -10,11 +10,9 @@ import (
 
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/annotations"
-	_ "github.com/conductorone/baton-sdk/pkg/annotations"
 	"github.com/conductorone/baton-sdk/pkg/pagination"
 	enTypes "github.com/conductorone/baton-sdk/pkg/types/entitlement"
 	grTypes "github.com/conductorone/baton-sdk/pkg/types/grant"
-	"github.com/conductorone/baton-sdk/pkg/types/resource"
 	sdkResources "github.com/conductorone/baton-sdk/pkg/types/resource"
 	"github.com/conductorone/baton-sql-server/pkg/mssqldb"
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
@@ -55,12 +53,12 @@ func (d *databaseRolePrincipalSyncer) List(ctx context.Context, parentResourceID
 
 	var ret []*v2.Resource
 	for _, principalModel := range principals {
-		r, err := resource.NewRoleResource(
+		r, err := sdkResources.NewRoleResource(
 			fmt.Sprintf("%s (%s)", principalModel.Name, db.Name),
 			d.ResourceType(ctx),
 			fmt.Sprintf("%s:%d", db.Name, principalModel.ID),
 			nil,
-			resource.WithParentResourceID(parentResourceID),
+			sdkResources.WithParentResourceID(parentResourceID),
 		)
 		if err != nil {
 			return nil, "", nil, err
