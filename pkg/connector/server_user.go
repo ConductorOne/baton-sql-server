@@ -20,6 +20,7 @@ import (
 )
 
 var _ connectorbuilder.ResourceDeleter = (*userPrincipalSyncer)(nil)
+var _ connectorbuilder.AccountManagerLimited = (*userPrincipalSyncer)(nil)
 
 // userPrincipalSyncer implements both ResourceSyncer and AccountManager.
 type userPrincipalSyncer struct {
@@ -96,7 +97,7 @@ func (d *userPrincipalSyncer) Grants(ctx context.Context, resource *v2.Resource,
 func (d *userPrincipalSyncer) CreateAccount(
 	ctx context.Context,
 	accountInfo *v2.AccountInfo,
-	credentialOptions *v2.CredentialOptions,
+	credentialOptions *v2.LocalCredentialOptions,
 ) (connectorbuilder.CreateAccountResponse, []*v2.PlaintextData, annotations.Annotations, error) {
 	var domain, formattedUsername, password string
 	l := ctxzap.Extract(ctx)
