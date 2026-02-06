@@ -9,6 +9,7 @@ import (
 
 	config "github.com/conductorone/baton-sdk/pkg/config"
 	"github.com/conductorone/baton-sdk/pkg/connectorbuilder"
+	"github.com/conductorone/baton-sdk/pkg/connectorrunner"
 	"github.com/conductorone/baton-sdk/pkg/types"
 	"github.com/conductorone/baton-sql-server/pkg/connector"
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
@@ -36,7 +37,13 @@ func main() {
 		}
 	}
 
-	_, cmd, err := config.DefineConfiguration(ctx, connectorName, getConnector, cfg)
+	_, cmd, err := config.DefineConfiguration(
+		ctx,
+		connectorName,
+		getConnector,
+		cfg,
+		connectorrunner.WithDefaultCapabilitiesConnectorBuilder(&connector.Mssqldb{}),
+	)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err.Error())
 		os.Exit(1)
