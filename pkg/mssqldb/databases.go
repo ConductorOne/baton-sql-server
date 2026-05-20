@@ -144,13 +144,13 @@ func (c *Client) RevokePermissionOnDatabase(ctx context.Context, permission, db,
 	}
 
 	command := fmt.Sprintf(
-		"GRANT %s ON DATABASE::[%s] TO [%s];",
+		"REVOKE %s ON DATABASE::[%s] FROM [%s];",
 		fullPermission,
 		db,
 		user,
 	)
 
-	_, err := c.db.ExecContext(ctx, command, fullPermission, db, user)
+	_, err := c.db.ExecContext(ctx, command)
 	if err != nil {
 		return err
 	}
