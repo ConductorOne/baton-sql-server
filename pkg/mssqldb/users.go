@@ -386,6 +386,14 @@ const (
 func (c *Client) CreateLogin(ctx context.Context, loginType LoginType, username, password string) error {
 	l := ctxzap.Extract(ctx)
 
+	// Username is interpolated into bracket-quoted SQL Server identifiers
+	// below. Reject characters that would let the value break out of the
+	// brackets (this is the same guard the rest of this package uses on
+	// identifier-interpolated inputs).
+	if strings.ContainsAny(username, "[]\"';") {
+		return fmt.Errorf("invalid characters in username")
+	}
+
 	var query string
 	switch loginType {
 	case LoginTypeWindows:
@@ -399,7 +407,12 @@ func (c *Client) CreateLogin(ctx context.Context, loginType LoginType, username,
 		// For SQL Server authentication, only username and password are used
 		loginName := fmt.Sprintf("[%s]", username)
 		l.Debug("creating SQL login", zap.String("login", loginName))
-		query = fmt.Sprintf("CREATE LOGIN %s WITH PASSWORD = '%s';", loginName, password)
+		// SQL Server string literals escape ' by doubling it. Without this,
+		// a password containing ' breaks out of the literal -- a SQL
+		// injection vector and at minimum a syntax error for legitimate
+		// users whose passwords contain '.
+		escapedPassword := strings.ReplaceAll(password, "'", "''")
+		query = fmt.Sprintf("CREATE LOGIN %s WITH PASSWORD = '%s';", loginName, escapedPassword)
 	case LoginTypeAzureAD, LoginTypeEntraID:
 		// Azure AD and Entra ID use external provider
 		loginName := fmt.Sprintf("[%s]", username)
