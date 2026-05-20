@@ -399,7 +399,12 @@ func (c *Client) CreateLogin(ctx context.Context, loginType LoginType, username,
 		// For SQL Server authentication, only username and password are used
 		loginName := fmt.Sprintf("[%s]", username)
 		l.Debug("creating SQL login", zap.String("login", loginName))
-		query = fmt.Sprintf("CREATE LOGIN %s WITH PASSWORD = '%s';", loginName, password)
+		// SQL Server string literals escape ' by doubling it. Without this,
+		// a password containing ' breaks out of the literal -- a SQL
+		// injection vector and at minimum a syntax error for legitimate
+		// users whose passwords contain '.
+		escapedPassword := strings.ReplaceAll(password, "'", "''")
+		query = fmt.Sprintf("CREATE LOGIN %s WITH PASSWORD = '%s';", loginName, escapedPassword)
 	case LoginTypeAzureAD, LoginTypeEntraID:
 		// Azure AD and Entra ID use external provider
 		loginName := fmt.Sprintf("[%s]", username)
