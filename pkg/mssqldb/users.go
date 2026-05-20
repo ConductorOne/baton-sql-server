@@ -386,6 +386,14 @@ const (
 func (c *Client) CreateLogin(ctx context.Context, loginType LoginType, username, password string) error {
 	l := ctxzap.Extract(ctx)
 
+	// Username is interpolated into bracket-quoted SQL Server identifiers
+	// below. Reject characters that would let the value break out of the
+	// brackets (this is the same guard the rest of this package uses on
+	// identifier-interpolated inputs).
+	if strings.ContainsAny(username, "[]\"';") {
+		return fmt.Errorf("invalid characters in username")
+	}
+
 	var query string
 	switch loginType {
 	case LoginTypeWindows:

@@ -117,7 +117,7 @@ func (c *Client) GrantPermissionOnDatabase(ctx context.Context, permission, db, 
 
 	l.Debug("SQL QUERY", zap.String("q", command))
 
-	_, err := c.db.ExecContext(ctx, command, permission, db, user)
+	_, err := c.db.ExecContext(ctx, command)
 	if err != nil {
 		return err
 	}
