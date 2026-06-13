@@ -7,7 +7,8 @@ import (
 var (
 	dsn = field.StringField("dsn",
 		field.WithDescription("The connection string for connecting to SQL Server"),
-		field.WithRequired(true))
+		field.WithRequired(true),
+		field.WithIsSecret(true))
 	skipUnavailableDatabases = field.BoolField("skip-unavailable-databases",
 		field.WithDescription("Skip databases that are unavailable (offline, restoring, etc)"))
 )
