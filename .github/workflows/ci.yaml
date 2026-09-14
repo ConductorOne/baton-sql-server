@@ -57,7 +57,7 @@ jobs:
       - name: Run Docker Compose as a Daemon (to start sql server)
         run: docker compose -f ./docker-compose.yml up --detach
       - name: Install baton
-        run: ./scripts/get-baton.sh && mv baton /usr/local/bin
+        uses: ConductorOne/github-workflows/actions/get-baton@v4
       - name: Build baton-sql-server
         run: go build ./cmd/baton-sql-server
       - name: Create another database
