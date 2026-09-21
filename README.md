@@ -34,7 +34,7 @@ baton resources
 ## docker
 
 ```
-docker run --rm -v $(pwd):/out -e BATON_DSN="server=127.0.0.1;user id=sa;password=devP@ssw0rd;port=1433" ghcr.io/conductorone/baton-sql-server:latest -f "/out/sync.c1z"
+docker run --rm -v $(pwd):/out -e BATON_DSN="server=127.0.0.1;user id=sa;password=devP@ssw0rd;port=1433" public.ecr.aws/conductorone/baton-sql-server:latest -f "/out/sync.c1z"
 docker run --rm -v $(pwd):/out ghcr.io/conductorone/baton:latest -f "/out/sync.c1z" resources
 ```
 
