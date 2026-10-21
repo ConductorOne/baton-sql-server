@@ -2,7 +2,7 @@ module github.com/conductorone/baton-sql-server
 
 go 1.26.0
 
-toolchain go1.26.9
+toolchain go1.26.10
 
 require (
 	github.com/conductorone/baton-sdk v0.2.99
