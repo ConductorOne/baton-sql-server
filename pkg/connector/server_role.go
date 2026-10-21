@@ -93,7 +93,7 @@ func (d *serverRolePrincipalSyncer) loadGrantPaging(token *pagination.Token) (*p
 
 	if b.Current() == nil {
 		b.Push(pagination.PageState{
-			ResourceTypeID: "init",
+			ResourceTypeID: resourceTypeIDInit,
 		})
 	}
 
@@ -134,7 +134,7 @@ func (d *serverRolePrincipalSyncer) Grants(ctx context.Context, resource *v2.Res
 	}
 
 	switch b.ResourceTypeID() {
-	case "init":
+	case resourceTypeIDInit:
 		b.Pop()
 		b.Push(pagination.PageState{
 			ResourceTypeID: resourceTypeServerRole.Id,

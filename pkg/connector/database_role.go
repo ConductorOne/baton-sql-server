@@ -14,7 +14,6 @@ import (
 	"github.com/conductorone/baton-sdk/pkg/pagination"
 	enTypes "github.com/conductorone/baton-sdk/pkg/types/entitlement"
 	grTypes "github.com/conductorone/baton-sdk/pkg/types/grant"
-	"github.com/conductorone/baton-sdk/pkg/types/resource"
 	sdkResources "github.com/conductorone/baton-sdk/pkg/types/resource"
 	"github.com/conductorone/baton-sql-server/pkg/mssqldb"
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
@@ -55,12 +54,12 @@ func (d *databaseRolePrincipalSyncer) List(ctx context.Context, parentResourceID
 
 	var ret []*v2.Resource
 	for _, principalModel := range principals {
-		r, err := resource.NewRoleResource(
+		r, err := sdkResources.NewRoleResource(
 			fmt.Sprintf("%s (%s)", principalModel.Name, db.Name),
 			d.ResourceType(ctx),
 			fmt.Sprintf("%s:%d", db.Name, principalModel.ID),
 			nil,
-			resource.WithParentResourceID(parentResourceID),
+			sdkResources.WithParentResourceID(parentResourceID),
 		)
 		if err != nil {
 			return nil, "", nil, err
@@ -99,7 +98,7 @@ func (d *databaseRolePrincipalSyncer) loadGrantPaging(token *pagination.Token) (
 
 	if b.Current() == nil {
 		b.Push(pagination.PageState{
-			ResourceTypeID: "init",
+			ResourceTypeID: resourceTypeIDInit,
 		})
 	}
 
@@ -144,7 +143,7 @@ func (d *databaseRolePrincipalSyncer) Grants(
 	}
 
 	switch b.ResourceTypeID() {
-	case "init":
+	case resourceTypeIDInit:
 		b.Pop()
 		b.Push(pagination.PageState{
 			ResourceTypeID: resourceTypeDatabaseRole.Id,

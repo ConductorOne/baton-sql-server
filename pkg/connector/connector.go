@@ -11,6 +11,11 @@ import (
 	"github.com/conductorone/baton-sql-server/pkg/mssqldb"
 )
 
+const (
+	profileKeyUsername = "username"
+	resourceTypeIDInit = "init"
+)
+
 type Mssqldb struct {
 	client *mssqldb.Client
 }
@@ -57,7 +62,7 @@ func (o *Mssqldb) Metadata(ctx context.Context) (*v2.ConnectorMetadata, error) {
 					Placeholder: "DOMAIN",
 					Order:       2,
 				},
-				"username": {
+				profileKeyUsername: {
 					DisplayName: "Username",
 					Required:    true,
 					Description: "The username for which to create a SQL Server login.",

@@ -111,7 +111,7 @@ func (d *userPrincipalSyncer) CreateAccount(
 	loginType := mssqldb.LoginType(loginTypeStr)
 
 	// Extract required username field from profile
-	usernameVal := accountInfo.Profile.GetFields()["username"]
+	usernameVal := accountInfo.Profile.GetFields()[profileKeyUsername]
 	if usernameVal == nil || usernameVal.GetStringValue() == "" {
 		return nil, nil, nil, fmt.Errorf("missing required username field")
 	}
@@ -141,9 +141,9 @@ func (d *userPrincipalSyncer) CreateAccount(
 
 	// Create a resource for the newly created login
 	profile := map[string]interface{}{
-		"username":        username,
-		"login_type":      string(loginType),
-		"formatted_login": formattedUsername,
+		profileKeyUsername: username,
+		"login_type":       string(loginType),
+		"formatted_login":  formattedUsername,
 	}
 
 	// Add domain if it exists (for Windows auth)

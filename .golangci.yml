@@ -99,6 +99,9 @@ linters:
       - linters:
           - godot
         source: (TODO)
+      - linters:
+          - goconst
+        path: _test\.go
     paths:
       - third_party$
       - builtin$
