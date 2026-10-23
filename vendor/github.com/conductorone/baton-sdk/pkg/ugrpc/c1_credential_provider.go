@@ -1,10 +1,7 @@
 package ugrpc
 
 import (
-	"bytes"
 	"context"
-	"crypto/ed25519"
-	"encoding/base64"
 	"errors"
 	"net"
 	"net/http"
@@ -13,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/conductorone/baton-sdk/pkg/crypto"
 	"github.com/conductorone/baton-sdk/pkg/uhttp"
 	"github.com/go-jose/go-jose/v4"
 	"github.com/go-jose/go-jose/v4/json"
@@ -30,10 +28,7 @@ const (
 )
 
 var (
-	ErrInvalidClientSecret = errors.New("invalid client secret")
-	ErrInvalidClientID     = errors.New("invalid client id")
-
-	v1SecretTokenIdentifier = []byte("v1")
+	ErrInvalidClientID = errors.New("invalid client id")
 )
 
 type c1Token struct {
@@ -64,39 +59,6 @@ func parseClientID(input string) (string, string, error) {
 	}
 
 	return clientName, items[0], nil
-}
-
-func parseSecret(input []byte) (*jose.JSONWebKey, error) {
-	items := bytes.SplitN(input, []byte(":"), 4)
-	if len(items) != 4 {
-		return nil, ErrInvalidClientSecret
-	}
-
-	if !bytes.Equal(items[2], v1SecretTokenIdentifier) {
-		return nil, ErrInvalidClientSecret
-	}
-
-	jwkData, err := base64.RawURLEncoding.DecodeString(string(items[3]))
-	if err != nil {
-		return nil, ErrInvalidClientSecret
-	}
-
-	npk := &jose.JSONWebKey{}
-	err = npk.UnmarshalJSON(jwkData)
-	if err != nil {
-		return nil, ErrInvalidClientSecret
-	}
-
-	if npk.IsPublic() || !npk.Valid() {
-		return nil, ErrInvalidClientSecret
-	}
-
-	_, ok := npk.Key.(ed25519.PrivateKey)
-	if !ok {
-		return nil, ErrInvalidClientSecret
-	}
-
-	return npk, nil
 }
 
 func (c *c1TokenSource) Token() (*oauth2.Token, error) {
@@ -164,6 +126,7 @@ func (c *c1TokenSource) Token() (*oauth2.Token, error) {
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return nil, err
@@ -197,7 +160,7 @@ func newC1TokenSource(ctx context.Context, clientID string, clientSecret string)
 		return nil, "", "", err
 	}
 
-	secret, err := parseSecret([]byte(clientSecret))
+	secret, err := crypto.ParseClientSecret([]byte(clientSecret), false)
 	if err != nil {
 		return nil, "", "", err
 	}
@@ -221,7 +184,7 @@ type c1CredentialProvider struct {
 func (c *c1CredentialProvider) GetRequestMetadata(ctx context.Context, uri ...string) (map[string]string, error) {
 	token, err := c.tokenSource.Token()
 	if err != nil {
-		return nil, err
+		return nil, credsStatus(err)
 	}
 
 	ri, _ := credentials.RequestInfoFromContext(ctx)
@@ -237,6 +200,33 @@ func (c *c1CredentialProvider) GetRequestMetadata(ctx context.Context, uri ...st
 
 func (c *c1CredentialProvider) RequireTransportSecurity() bool {
 	return true
+}
+
+// credsStatus returns err with a code PerRPCCredentials may carry.
+// grpc rewrites InvalidArgument, NotFound, AlreadyExists, FailedPrecondition,
+// Aborted, OutOfRange, and DataLoss to Internal. Bootstrap retries Internal
+// with no attempt limit. A certificate failure will not succeed on a retry,
+// so it becomes Unauthenticated, which Bootstrap does not retry. The other
+// restricted codes stay retryable as Unavailable.
+func credsStatus(err error) error {
+	st, ok := status.FromError(err)
+	if !ok || !restrictedControlPlaneCode(st.Code()) {
+		return err
+	}
+	if st.Code() == codes.FailedPrecondition {
+		return status.Error(codes.Unauthenticated, st.Message())
+	}
+	return status.Error(codes.Unavailable, st.Message())
+}
+
+func restrictedControlPlaneCode(code codes.Code) bool {
+	switch code {
+	case codes.InvalidArgument, codes.NotFound, codes.AlreadyExists,
+		codes.FailedPrecondition, codes.Aborted, codes.OutOfRange, codes.DataLoss:
+		return true
+	default:
+		return false
+	}
 }
 
 func NewC1CredentialProvider(ctx context.Context, clientID string, clientSecret string) (credentials.PerRPCCredentials, string, string, error) {

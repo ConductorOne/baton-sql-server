@@ -53,6 +53,7 @@ func (b *BearerAuth) GetClient(ctx context.Context, options ...Option) (*http.Cl
 
 type BasicAuth struct {
 	Username string
+
 	Password string
 }
 
@@ -104,7 +105,7 @@ func (o *OAuth2ClientCredentials) GetClient(ctx context.Context, options ...Opti
 		return nil, err
 	}
 	ctx = context.WithValue(ctx, oauth2.HTTPClient, httpClient)
-	ts := o.cfg.TokenSource(ctx)
+	ts := NewClassifyingTokenSource(o.cfg.TokenSource(ctx))
 	httpClient = oauth2.NewClient(ctx, ts)
 
 	return httpClient, nil
@@ -140,7 +141,7 @@ func (o *OAuth2JWT) GetClient(ctx context.Context, options ...Option) (*http.Cli
 	}
 
 	ctx = context.WithValue(ctx, oauth2.HTTPClient, httpClient)
-	ts := jwt.TokenSource(ctx)
+	ts := NewClassifyingTokenSource(jwt.TokenSource(ctx))
 	httpClient = oauth2.NewClient(ctx, ts)
 
 	return httpClient, nil
@@ -193,7 +194,10 @@ func (o *OAuth2RefreshToken) GetClient(ctx context.Context, options ...Option) (
 		RefreshToken: o.refreshToken,
 		TokenType:    "Bearer",
 	}
-	httpClient = o.cfg.Client(ctx, token)
+	// Config.Client is Config.TokenSource plus oauth2.NewClient, spelled out
+	// here so the refresh goes through NewClassifyingTokenSource.
+	ts := NewClassifyingTokenSource(o.cfg.TokenSource(ctx, token))
+	httpClient = oauth2.NewClient(ctx, ts)
 
 	return httpClient, nil
 }
