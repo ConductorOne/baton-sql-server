@@ -20,7 +20,10 @@ import (
 	"go.uber.org/zap"
 )
 
-var _ connectorbuilder.ResourceDeleter = (*userPrincipalSyncer)(nil)
+var (
+	_ connectorbuilder.ResourceDeleter = (*userPrincipalSyncer)(nil)
+	_ connectorbuilder.AccountManager  = (*userPrincipalSyncer)(nil)
+)
 
 // userPrincipalSyncer implements both ResourceSyncer and AccountManager.
 type userPrincipalSyncer struct {
@@ -51,12 +54,12 @@ func (d *userPrincipalSyncer) List(ctx context.Context, parentResourceID *v2.Res
 
 	var ret []*v2.Resource
 	for _, principalModel := range principals {
-		status := v2.UserTrait_Status_STATUS_ENABLED
+		status := v2.Status_RESOURCE_STATUS_ENABLED
 		if principalModel.IsDisabled {
-			status = v2.UserTrait_Status_STATUS_DISABLED
+			status = v2.Status_RESOURCE_STATUS_DISABLED
 		}
 
-		userOpts := []resource.UserTraitOption{resource.WithStatus(status)}
+		var userOpts []resource.UserTraitOption
 
 		if _, err = mail.ParseAddress(principalModel.Name); err == nil {
 			userOpts = append(userOpts, resource.WithEmail(principalModel.Name, true))
@@ -68,6 +71,7 @@ func (d *userPrincipalSyncer) List(ctx context.Context, parentResourceID *v2.Res
 			principalModel.ID,
 			userOpts,
 			resource.WithParentResourceID(parentResourceID),
+			resource.WithResourceStatus(status, ""),
 		)
 		if err != nil {
 			return nil, "", nil, err
@@ -97,7 +101,7 @@ func (d *userPrincipalSyncer) Grants(ctx context.Context, resource *v2.Resource,
 func (d *userPrincipalSyncer) CreateAccount(
 	ctx context.Context,
 	accountInfo *v2.AccountInfo,
-	credentialOptions *v2.CredentialOptions,
+	credentialOptions *v2.LocalCredentialOptions,
 ) (connectorbuilder.CreateAccountResponse, []*v2.PlaintextData, annotations.Annotations, error) {
 	var domain, formattedUsername, password string
 	l := ctxzap.Extract(ctx)
@@ -153,8 +157,6 @@ func (d *userPrincipalSyncer) CreateAccount(
 
 	// Use email as name if it looks like an email address
 	var userOpts []resource.UserTraitOption
-	userOpts = append(userOpts, resource.WithUserProfile(profile))
-	userOpts = append(userOpts, resource.WithStatus(v2.UserTrait_Status_STATUS_ENABLED))
 
 	if _, err = mail.ParseAddress(username); err == nil {
 		userOpts = append(userOpts, resource.WithEmail(username, true))
@@ -166,6 +168,8 @@ func (d *userPrincipalSyncer) CreateAccount(
 		d.ResourceType(ctx),
 		uid.ID,
 		userOpts,
+		resource.WithResourceProfile(profile),
+		resource.WithResourceStatus(v2.Status_RESOURCE_STATUS_ENABLED, ""),
 	)
 	if err != nil {
 		l.Error("Failed to create resource for new user", zap.Error(err))

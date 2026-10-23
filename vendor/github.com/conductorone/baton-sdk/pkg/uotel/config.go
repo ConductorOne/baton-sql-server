@@ -134,14 +134,18 @@ func (c *otelConfig) init(ctx context.Context) (context.Context, error) {
 		return ctx, nil
 	}
 
-	ctx, err = c.initLogging(ctx, cc)
-	if err != nil {
-		return nil, fmt.Errorf("otel: failed to initialize logging: %w", err)
+	if !c.loggingDisabled {
+		ctx, err = c.initLogging(ctx, cc)
+		if err != nil {
+			return nil, fmt.Errorf("otel: failed to initialize logging: %w", err)
+		}
 	}
 
-	ctx, err = c.initTracing(ctx, cc)
-	if err != nil {
-		return nil, fmt.Errorf("otel: failed to initialize tracing: %w", err)
+	if !c.tracingDisabled {
+		ctx, err = c.initTracing(ctx, cc)
+		if err != nil {
+			return nil, fmt.Errorf("otel: failed to initialize tracing: %w", err)
+		}
 	}
 	return ctx, nil
 }
@@ -251,7 +255,7 @@ func (c *otelConfig) initLogging(ctx context.Context, cc *grpc.ClientConn) (cont
 		return nil, fmt.Errorf("failed to initialize otlp exporter: %w", err)
 	}
 	// TODO(morgabra): Whole bunch of tunables _here_...
-	processor := log.NewBatchProcessor(exp, log.WithExportInterval(time.Second*5))
+	processor := log.NewBatchProcessor(exp, log.WithExportInterval(time.Second*1))
 	// TODO(morgabra): Whole bunch of tunables ALSO HERE...
 	provider := log.NewLoggerProvider(
 		log.WithResource(res),
@@ -259,8 +263,17 @@ func (c *otelConfig) initLogging(ctx context.Context, cc *grpc.ClientConn) (cont
 	)
 
 	otelzapcore := otelzap.NewCore(c.serviceName, otelzap.WithVersion(sdk.Version), otelzap.WithLoggerProvider(provider))
+
+	// Get the base logger's core to use as a level gate so that the otel core
+	// doesn't enable levels (like Debug) that the base logger doesn't want.
+	baseCore := zap.L().Core()
+	filteredOtelCore := &levelFilteredCore{
+		Core:         otelzapcore,
+		levelEnabler: baseCore,
+	}
+
 	addOtel := zap.WrapCore(func(c zapcore.Core) zapcore.Core {
-		return zapcore.NewTee(c, otelzapcore)
+		return zapcore.NewTee(c, filteredOtelCore)
 	})
 
 	// NOTE(morgabra): InitialFields sent to zap.Build() for the base logger aren't accessible here, so if we also have
@@ -286,25 +299,26 @@ func (c *otelConfig) initLogging(ctx context.Context, cc *grpc.ClientConn) (cont
 	return ctxzap.ToContext(ctx, l), nil
 }
 
-// Close closes all connections managed by the config.
+// Close shuts down the tracer and log providers, which flushes their queued
+// batches, and then closes the connections they export over.
 func (c *otelConfig) Close(ctx context.Context) error {
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
 
 	var errs []error
-	for _, conn := range c.c {
-		if err := conn.Close(); err != nil {
-			errs = append(errs, err)
-		}
-	}
-	c.c = make(map[string]*grpc.ClientConn)
-
 	for _, shutdown := range c.shutdown {
 		if err := shutdown(ctx); err != nil {
 			errs = append(errs, err)
 		}
 	}
 	c.shutdown = nil
+
+	for _, conn := range c.c {
+		if err := conn.Close(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	c.c = make(map[string]*grpc.ClientConn)
 
 	err := errors.Join(errs...)
 	if err != nil {
@@ -326,7 +340,7 @@ func getTLSConfig(tlsCertPath, tlsCert string) (*tls.Config, error) {
 	if tlsCertPath == "" && tlsCert == "" {
 		zap.L().Debug("otel: no certificate provided, using system certificate pool")
 		systemPool, err := x509.SystemCertPool()
-		if err != nil {
+		if err != nil || systemPool == nil {
 			return nil, fmt.Errorf("failed to load system certificate pool: %w", err)
 		}
 		return &tls.Config{
@@ -398,4 +412,30 @@ func createInsecureGRPCConnection(endpoint string) (*grpc.ClientConn, error) {
 	}
 
 	return conn, nil
+}
+
+// levelFilteredCore wraps a zapcore.Core and gates it with a LevelEnabler.
+// This prevents the wrapped core from enabling levels that the base logger doesn't want,
+// which is important when tee-ing cores together since NewTee enables a level if ANY core enables it.
+type levelFilteredCore struct {
+	zapcore.Core
+	levelEnabler zapcore.LevelEnabler
+}
+
+func (c *levelFilteredCore) Enabled(lvl zapcore.Level) bool {
+	return c.levelEnabler.Enabled(lvl)
+}
+
+func (c *levelFilteredCore) Check(ent zapcore.Entry, ce *zapcore.CheckedEntry) *zapcore.CheckedEntry {
+	if c.levelEnabler.Enabled(ent.Level) {
+		return c.Core.Check(ent, ce)
+	}
+	return ce
+}
+
+func (c *levelFilteredCore) With(fields []zapcore.Field) zapcore.Core {
+	return &levelFilteredCore{
+		Core:         c.Core.With(fields),
+		levelEnabler: c.levelEnabler,
+	}
 }

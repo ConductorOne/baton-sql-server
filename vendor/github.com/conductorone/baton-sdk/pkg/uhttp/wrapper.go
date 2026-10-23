@@ -11,16 +11,22 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"syscall"
+	"regexp"
+	"strings"
+	"sync"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
 	uRateLimit "go.uber.org/ratelimit"
 	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
+	"github.com/conductorone/baton-sdk/pkg/metrics"
 	"github.com/conductorone/baton-sdk/pkg/ratelimit"
 )
 
@@ -32,6 +38,11 @@ const (
 	applicationVndApiJSON     = "application/vnd.api+json"
 	acceptHeader              = "Accept"
 	authorizationHeader       = "Authorization"
+
+	httpCacheHitCounterName  = "baton_sdk.http_cache_hit"
+	httpCacheMissCounterName = "baton_sdk.http_cache_miss"
+	httpCacheHitCounterDesc  = "number of HTTP cache hits"
+	httpCacheMissCounterDesc = "number of HTTP cache misses"
 )
 
 type WrapperResponse struct {
@@ -62,25 +73,69 @@ func WithRateLimiter(rate int, per time.Duration) WrapperOption {
 	return rateLimiterOption{rate: rate, per: per}
 }
 
+type metricsHandlerOption struct {
+	handler metrics.Handler
+}
+
+func (o metricsHandlerOption) Apply(c *BaseHttpClient) {
+	c.metricsHandler = o.handler
+}
+
+// WithMetricsHandler returns a WrapperOption that sets the metrics handler for the http client.
+// When set, cache hits and misses will be recorded as metrics.
+func WithMetricsHandler(handler metrics.Handler) WrapperOption {
+	return metricsHandlerOption{handler: handler}
+}
+
+type cacheKeyHeadersWrapperOption struct {
+	opt CacheOption
+}
+
+func (o cacheKeyHeadersWrapperOption) Apply(c *BaseHttpClient) {
+	c.cacheOptions = append(c.cacheOptions, o.opt)
+}
+
+// WithCacheKeyHeaders returns a WrapperOption that additionally folds the
+// named headers into the HTTP response cache key for every request this
+// client makes, on top of the default set (Accept, Content-Type, Cookie,
+// Range). Use this when requests through this client vary by a header the
+// cache wouldn't otherwise key on -- e.g. a per-call Authorization token or
+// a tenant/version header -- so requests that only differ in that header
+// don't collide in the cache. The value folded in is always read from
+// req.Header at request time, so the key can never describe a value other
+// than the one actually sent.
+//
+// Named headers must be set on the request before it reaches Do; a header
+// only added later by a transport-level RoundTripper or a cookie jar is not
+// seen by the cache lookup and will not be reflected in the key.
+func WithCacheKeyHeaders(headers ...string) WrapperOption {
+	return cacheKeyHeadersWrapperOption{opt: CacheKeyHeaders(headers...)}
+}
+
 type WrapperOption interface {
 	Apply(*BaseHttpClient)
 }
 
 // Keep a handle on all caches so we can clear them later.
-var caches []icache
+var (
+	caches    []icache
+	cachesMtx sync.RWMutex
+)
 
 func ClearCaches(ctx context.Context) error {
 	l := ctxzap.Extract(ctx)
 	l.Debug("clearing caches")
-	var err error
+	var errs []error
+	cachesMtx.RLock()
+	defer cachesMtx.RUnlock()
 	for _, cache := range caches {
 		l.Debug("clearing cache", zap.String("cache", fmt.Sprintf("%T", cache)), zap.Any("stats", cache.Stats(ctx)))
-		err = cache.Clear(ctx)
+		err := cache.Clear(ctx)
 		if err != nil {
-			err = errors.Join(err, err)
+			errs = append(errs, err)
 		}
 	}
-	return err
+	return errors.Join(errs...)
 }
 
 type (
@@ -90,9 +145,11 @@ type (
 		NewRequest(ctx context.Context, method string, url *url.URL, options ...RequestOption) (*http.Request, error)
 	}
 	BaseHttpClient struct {
-		HttpClient    *http.Client
-		rateLimiter   uRateLimit.Limiter
-		baseHttpCache icache
+		HttpClient     *http.Client
+		rateLimiter    uRateLimit.Limiter
+		baseHttpCache  icache
+		metricsHandler metrics.Handler
+		cacheOptions   []CacheOption
 	}
 
 	DoOption      func(resp *WrapperResponse) error
@@ -121,7 +178,9 @@ func NewBaseHttpClientWithContext(ctx context.Context, httpClient *http.Client, 
 		baseHttpCache: cache,
 	}
 
+	cachesMtx.Lock()
 	caches = append(caches, cache)
+	cachesMtx.Unlock()
 
 	for _, opt := range opts {
 		opt.Apply(cli)
@@ -130,19 +189,49 @@ func NewBaseHttpClientWithContext(ctx context.Context, httpClient *http.Client, 
 	return cli, nil
 }
 
+// decodeError is a success decoder failing to read a body into its target.
+// Do leaves it out of the error for a non-2xx response: that body was never
+// the success shape, and the decoder's complaint would read as the failure.
+type decodeError struct {
+	err error
+}
+
+func (e *decodeError) Error() string {
+	return e.err.Error()
+}
+
+func (e *decodeError) Unwrap() error {
+	return e.err
+}
+
+func decodeFailure(err error) error {
+	if err == nil {
+		return nil
+	}
+	return &decodeError{err: err}
+}
+
+func withoutDecodeErrors(errs []error) []error {
+	kept := make([]error, 0, len(errs))
+	for _, err := range errs {
+		var decodeErr *decodeError
+		if !errors.As(err, &decodeErr) {
+			kept = append(kept, err)
+		}
+	}
+	return kept
+}
+
 // WithJSONResponse is a wrapper that marshals the returned response body into
 // the provided shape. If the API should return an empty JSON body (i.e. HTTP
 // status code 204 No Content), then pass a `nil` to `response`.
-func WithJSONResponse(response interface{}) DoOption {
+func WithJSONResponse(response any) DoOption {
 	return func(resp *WrapperResponse) error {
 		contentHeader := resp.Header.Get(ContentType)
 
 		if !IsJSONContentType(contentHeader) {
-			if len(resp.Body) != 0 {
-				// to print the response, set the envvar BATON_DEBUG_PRINT_RESPONSE_BODY as non-empty, instead
-				return fmt.Errorf("unexpected content type for JSON response: %s. status code: %d", contentHeader, resp.StatusCode)
-			}
-			return fmt.Errorf("unexpected content type for JSON response: %s. status code: %d", contentHeader, resp.StatusCode)
+			// to print the response, set the envvar BATON_DEBUG_PRINT_RESPONSE_BODY as non-empty, instead
+			return decodeFailure(fmt.Errorf("unexpected content type for JSON response: %s. status code: %d", contentHeader, resp.StatusCode))
 		}
 		if response == nil && len(resp.Body) == 0 {
 			return nil
@@ -150,14 +239,14 @@ func WithJSONResponse(response interface{}) DoOption {
 		err := json.Unmarshal(resp.Body, response)
 		if err != nil {
 			// to print the response, set the envvar BATON_DEBUG_PRINT_RESPONSE_BODY as non-empty, instead
-			return fmt.Errorf("failed to unmarshal json response: %w. status code: %d", err, resp.StatusCode)
+			return decodeFailure(fmt.Errorf("failed to unmarshal json response: %w. status code: %d", err, resp.StatusCode))
 		}
 		return nil
 	}
 }
 
 // Ignore content type header and always try to parse the response as JSON.
-func WithAlwaysJSONResponse(response interface{}) DoOption {
+func WithAlwaysJSONResponse(response any) DoOption {
 	return func(resp *WrapperResponse) error {
 		if response == nil && len(resp.Body) == 0 {
 			return nil
@@ -165,39 +254,307 @@ func WithAlwaysJSONResponse(response interface{}) DoOption {
 		err := json.Unmarshal(resp.Body, response)
 		if err != nil {
 			// to print the response, set the envvar BATON_DEBUG_PRINT_RESPONSE_BODY as non-empty, instead
-			return fmt.Errorf("failed to unmarshal json response: %w. status code: %d", err, resp.StatusCode)
+			return decodeFailure(fmt.Errorf("failed to unmarshal json response: %w. status code: %d", err, resp.StatusCode))
 		}
 		return nil
 	}
+}
+
+func WithXMLResponse(response any) DoOption {
+	return func(resp *WrapperResponse) error {
+		if !IsXMLContentType(resp.Header.Get(ContentType)) {
+			return decodeFailure(fmt.Errorf("unexpected content type for xml response: %s", resp.Header.Get(ContentType)))
+		}
+		if response == nil && len(resp.Body) == 0 {
+			return nil
+		}
+		err := xml.Unmarshal(resp.Body, response)
+		if err != nil {
+			return decodeFailure(fmt.Errorf("failed to unmarshal xml response: %w. status code: %d", err, resp.StatusCode))
+		}
+		return nil
+	}
+}
+
+// Ignore content type header and always try to parse the response as XML.
+//
+// A *map[string]any target is decoded through the generic xmlMap decoder, since
+// encoding/xml cannot unmarshal into a map and would fail for every input. Any
+// other target keeps going straight to xml.Unmarshal, so callers passing a typed
+// struct are unaffected.
+func WithAlwaysXMLResponse(response any) DoOption {
+	return func(resp *WrapperResponse) error {
+		if response == nil && len(resp.Body) == 0 {
+			return nil
+		}
+		if genericResponse, ok := response.(*map[string]any); ok {
+			// Scoped to the map target so the struct path below keeps its exact
+			// existing behavior, including for 204 and empty bodies.
+			if resp.StatusCode == http.StatusNoContent {
+				return nil
+			}
+			if isSuccessStatusCode(resp.StatusCode) && len(resp.Body) == 0 {
+				return nil
+			}
+			return decodeFailure(unmarshalXMLToMap(genericResponse, resp))
+		}
+		err := xml.Unmarshal(resp.Body, response)
+		if err != nil {
+			return decodeFailure(fmt.Errorf("failed to unmarshal xml response: %w. status code: %d", err, resp.StatusCode))
+		}
+		return nil
+	}
+}
+
+// unmarshalXMLToMap decodes an XML body into a generic map via the xmlMap decoder.
+// encoding/xml cannot unmarshal into a map directly, so any caller wanting an
+// arbitrary XML document as a map has to route through xmlMap.
+func unmarshalXMLToMap(response *map[string]any, resp *WrapperResponse) error {
+	// A typed-nil target, e.g. WithAlwaysXMLResponse((*map[string]any)(nil)), gets
+	// past an `any == nil` check because the interface still carries a type. Guard
+	// here rather than at each call site so assigning through it cannot panic.
+	// encoding/xml rejected this with "nil pointer passed to Unmarshal".
+	if response == nil {
+		return status.Error(codes.InvalidArgument, "response is nil")
+	}
+
+	var xm xmlMap
+	if err := xml.Unmarshal(resp.Body, &xm); err != nil {
+		return fmt.Errorf("failed to unmarshal xml response: %w. status code: %d", err, resp.StatusCode)
+	}
+	vMap, ok := xm.data.(map[string]any)
+	if !ok {
+		// The root's content has no map representation in two cases, and both used
+		// to fail outright with "unsupported XML structure":
+		//
+		//   - Its direct children repeat: <Users><User/><User/></Users> decodes to
+		//     a []map[string]any. A root-level list is a common API shape, so this
+		//     was a real gap rather than an edge case.
+		//   - It holds only text: <Code>OK</Code> decodes to a string.
+		//
+		// Key it by the root element name, which is otherwise discarded, so the
+		// document is reachable by a path instead of being an error.
+		//
+		// Note the arity seam this leaves: a root holding a *single* <User> decodes
+		// to a map and keeps the root stripped, so its path is "User" while the
+		// repeated case is "Users". One config cannot serve both. Closing that
+		// needs the decoder to group repeated children under their shared name,
+		// which would also make the slice case here unreachable.
+		*response = map[string]any{xm.root: xm.data}
+		return nil
+	}
+	*response = vMap
+	return nil
 }
 
 type ErrorResponse interface {
 	Message() string
 }
 
+// maxQuotedBodyLength bounds the text quotedBody puts into an error message.
+const maxQuotedBodyLength = 256
+
+// quotedBody renders an error body WithErrorResponse could not decode, as a
+// suffix for its message. Only a message is quoted: a record is where a
+// vendor states a user's login or email, whether it declares one or sends
+// one under a text type.
+func quotedBody(contentType string, body []byte) string {
+	if len(bytes.TrimSpace(body)) == 0 {
+		return ""
+	}
+	message := quotableMessage(contentType, body)
+	if message == "" {
+		return fmt.Sprintf(". body omitted (%d bytes)", len(body))
+	}
+	return ". body: " + message
+}
+
+// quotableMessage is the message body states, as a single line of at most
+// maxQuotedBodyLength runes and the mark that says more follows. It is ""
+// when there is nothing to quote: body states a record, or markup, or
+// nothing at all.
+func quotableMessage(contentType string, body []byte) string {
+	if !quotableContentType(contentType) {
+		return ""
+	}
+	// Scan no more than a message can quote; n runes hold at most n*UTFMax
+	// bytes.
+	head, dropped := body, false
+	if len(head) > maxQuotedBodyLength*utf8.UTFMax {
+		head, dropped = head[:maxQuotedBodyLength*utf8.UTFMax], true
+		// The cut can land inside a rune. Drop the part of it that is left,
+		// so the quote states no replacement character.
+		for len(head) > 0 {
+			if r, size := utf8.DecodeLastRune(head); r != utf8.RuneError || size > 1 {
+				break
+			}
+			head = head[:len(head)-1]
+		}
+	}
+
+	prefix, markup := plainPrefix(strings.TrimSpace(strings.TrimPrefix(string(head), "\ufeff")))
+	message := oneLine(prefix)
+	if message == "" || jsonRecord.MatchString(message) || emailAddress.MatchString(message) {
+		return ""
+	}
+	// The mark states that the message goes on. The cap and the scan each
+	// drop message text; markup ends the message, so what follows it is not
+	// more of one.
+	if runes := []rune(message); len(runes) > maxQuotedBodyLength {
+		return string(runes[:maxQuotedBodyLength]) + "..."
+	}
+	if dropped {
+		// The same cut can halve an address, which emailAddress no longer
+		// matches. Markup ends the message, so what follows it is not more
+		// of one and takes no mark.
+		if strings.ContainsRune(message, '@') {
+			return ""
+		}
+		if !markup {
+			return message + "..."
+		}
+	}
+	return message
+}
+
+// quotableContentType reports whether contentType declares text a message is
+// written in. An absent type counts as one, since a vendor answering in plain
+// text often declares nothing. Every other type states a record, text/csv and
+// text/xml included.
+func quotableContentType(contentType string) bool {
+	normalized := strings.TrimSpace(strings.ToLower(contentType))
+	return normalized == "" ||
+		strings.HasPrefix(normalized, "text/plain") ||
+		strings.HasPrefix(normalized, "text/html")
+}
+
+// jsonRecord matches an object or an array that quotes a string or separates
+// two single-quoted ones, which is what a record does and a message does not,
+// and one that opens after a prefix such as an XSSI guard. "[ERROR] upstream:
+// timeout" and "[upstream] can't connect" match neither, however much
+// punctuation they hold.
+var jsonRecord = regexp.MustCompile(`^[{\[].*(?:"|'\s*[:,])|[{\[]\s*"`)
+
+// emailAddress matches an address down to a letters-only top-level domain,
+// so a version string with an '@' in it is not one.
+var emailAddress = regexp.MustCompile(`[^\s@]+@[^\s@]+\.[A-Za-z]{2,}`)
+
+// plainPrefix is text up to the first markup tag, and whether a tag ended it.
+// A '<' that opens no tag, as in "quota must be < 5", is part of the message.
+func plainPrefix(text string) (string, bool) {
+	for i := range len(text) {
+		if text[i] != '<' {
+			continue
+		}
+		if i+1 < len(text) && opensTag(text[i+1]) {
+			return strings.TrimSpace(text[:i]), true
+		}
+	}
+	return text, false
+}
+
+func opensTag(c byte) bool {
+	switch {
+	case c == '!', c == '?', c == '/':
+		return true
+	case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z':
+		return true
+	}
+	return false
+}
+
+// oneLine collapses the whitespace in text and drops what does not print, so
+// a body cannot add a line to the message.
+func oneLine(text string) string {
+	printable := strings.Map(func(r rune) rune {
+		if unicode.IsPrint(r) {
+			return r
+		}
+		return ' '
+	}, text)
+	return strings.Join(strings.Fields(printable), " ")
+}
+
+// requestLogFields identify the request a log line is about. These fields omit
+// the query string.
+func requestLogFields(req *http.Request) []zap.Field {
+	if req == nil {
+		return nil
+	}
+	if req.URL == nil {
+		return []zap.Field{zap.String("http.method", req.Method)}
+	}
+	return []zap.Field{
+		zap.String("http.method", req.Method),
+		zap.String("http.url_details.host", req.URL.Host),
+		zap.String("http.url_details.path", req.URL.Path),
+	}
+}
+
+// isSuccessStatusCode reports whether code is in the 2xx success class.
+// http.StatusOK (200) is the inclusive lower bound and
+// http.StatusMultipleChoices (300) the exclusive upper bound.
+func isSuccessStatusCode(code int) bool {
+	return code >= http.StatusOK && code < http.StatusMultipleChoices
+}
+
+// GrpcCodeFromHTTPStatus maps an HTTP status code to the appropriate gRPC status code.
+func GrpcCodeFromHTTPStatus(httpStatus int) codes.Code {
+	switch httpStatus {
+	case http.StatusBadRequest:
+		return codes.InvalidArgument
+	case http.StatusRequestTimeout:
+		return codes.DeadlineExceeded
+	case http.StatusTooManyRequests, http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
+		return codes.Unavailable
+	case http.StatusNotFound:
+		return codes.NotFound
+	case http.StatusUnauthorized:
+		return codes.Unauthenticated
+	case http.StatusForbidden:
+		return codes.PermissionDenied
+	case http.StatusConflict:
+		return codes.AlreadyExists
+	case http.StatusNotImplemented:
+		return codes.Unimplemented
+	}
+	switch {
+	case httpStatus >= 500 && httpStatus <= 599:
+		return codes.Unavailable
+	case httpStatus >= 400 && httpStatus <= 499:
+		return codes.InvalidArgument
+	default:
+		return codes.Unknown
+	}
+}
+
 func WithErrorResponse(resource ErrorResponse) DoOption {
 	return func(resp *WrapperResponse) error {
-		if resp.StatusCode < 300 {
+		if resp.StatusCode < http.StatusMultipleChoices {
 			return nil
 		}
 
 		contentHeader := resp.Header.Get(ContentType)
 
+		grpcCode := GrpcCodeFromHTTPStatus(resp.StatusCode)
+
 		if !IsJSONContentType(contentHeader) {
-			// to print the response, set the envvar BATON_DEBUG_PRINT_RESPONSE_BODY as non-empty, instead
-			return fmt.Errorf("unexpected content type for JSON error response: %s. status code: %d", contentHeader, resp.StatusCode)
+			return status.Errorf(grpcCode,
+				"unexpected content type for JSON error response: %s. status code: %d%s",
+				contentHeader, resp.StatusCode, quotedBody(contentHeader, resp.Body))
 		}
 
 		// Decode the JSON response body into the ErrorResponse
 		if err := json.Unmarshal(resp.Body, &resource); err != nil {
-			// to print the response, set the envvar BATON_DEBUG_PRINT_RESPONSE_BODY as non-empty, instead
-			return fmt.Errorf("failed to unmarshal JSON error response: %w. status code: %d", err, resp.StatusCode)
+			return status.Errorf(grpcCode,
+				"failed to unmarshal JSON error response: %v. status code: %d%s",
+				err, resp.StatusCode, quotedBody(contentHeader, resp.Body))
 		}
 
 		// Construct a more detailed error message
 		errMsg := fmt.Sprintf("Request failed with status %d: %s", resp.StatusCode, resource.Message())
 
-		return status.Error(codes.Unknown, errMsg)
+		return status.Error(grpcCode, errMsg)
 	}
 }
 
@@ -211,32 +568,16 @@ func WithRatelimitData(resource *v2.RateLimitDescription) DoOption {
 			return err
 		}
 
-		resource.Limit = rl.Limit
-		resource.Remaining = rl.Remaining
-		resource.ResetAt = rl.ResetAt
-		resource.Status = rl.Status
+		resource.SetLimit(rl.GetLimit())
+		resource.SetRemaining(rl.GetRemaining())
+		resource.SetResetAt(rl.GetResetAt())
+		resource.SetStatus(rl.GetStatus())
 
 		return nil
 	}
 }
 
-func WithXMLResponse(response interface{}) DoOption {
-	return func(resp *WrapperResponse) error {
-		if !IsXMLContentType(resp.Header.Get(ContentType)) {
-			return fmt.Errorf("unexpected content type for xml response: %s", resp.Header.Get(ContentType))
-		}
-		if response == nil && len(resp.Body) == 0 {
-			return nil
-		}
-		err := xml.Unmarshal(resp.Body, response)
-		if err != nil {
-			return fmt.Errorf("failed to unmarshal xml response: %w. body %v", err, resp.Body)
-		}
-		return nil
-	}
-}
-
-func WithResponse(response interface{}) DoOption {
+func WithResponse(response any) DoOption {
 	return func(resp *WrapperResponse) error {
 		if IsJSONContentType(resp.Header.Get(ContentType)) {
 			return WithJSONResponse(response)(resp)
@@ -245,7 +586,60 @@ func WithResponse(response interface{}) DoOption {
 			return WithXMLResponse(response)(resp)
 		}
 
-		return status.Error(codes.Unknown, "unsupported content type")
+		return decodeFailure(status.Error(codes.Unknown, "unsupported content type"))
+	}
+}
+
+// Handle anything that can be marshaled into JSON or XML.
+// If the response is a list, its values will be put into the "items" field.
+// If the response is a single value (int, string, bool, etc), it will be put into the "value" field.
+// A response of `null` results in the "value" field being set to `nil`.
+func WithGenericResponse(response *map[string]any) DoOption {
+	return func(resp *WrapperResponse) error {
+		if response == nil {
+			return status.Error(codes.InvalidArgument, "response is nil")
+		}
+
+		if resp.StatusCode == http.StatusNoContent {
+			return nil
+		}
+
+		if isSuccessStatusCode(resp.StatusCode) && len(resp.Body) == 0 {
+			return nil
+		}
+
+		var v any
+		var err error
+
+		if IsJSONContentType(resp.Header.Get(ContentType)) {
+			err = WithJSONResponse(&v)(resp)
+			if err != nil {
+				return err
+			}
+			if list, ok := v.([]any); ok {
+				(*response)["items"] = list
+			} else if vMap, ok := v.(map[string]any); ok {
+				*response = vMap
+			} else if boolValue, ok := v.(bool); ok {
+				(*response) = map[string]any{"value": boolValue}
+			} else if floatValue, ok := v.(float64); ok {
+				(*response) = map[string]any{"value": floatValue}
+			} else if stringValue, ok := v.(string); ok {
+				(*response) = map[string]any{"value": stringValue}
+			} else if v == nil {
+				// JSON response is literally `null`.
+				(*response) = map[string]any{"value": nil}
+			} else {
+				return decodeFailure(status.Errorf(codes.Internal, "unsupported value type: %T", v))
+			}
+			return nil
+		}
+
+		if IsXMLContentType(resp.Header.Get(ContentType)) {
+			return decodeFailure(unmarshalXMLToMap(response, resp))
+		}
+
+		return decodeFailure(status.Error(codes.Unknown, fmt.Sprintf("unsupported content type: %s", resp.Header.Get(ContentType))))
 	}
 }
 
@@ -255,9 +649,7 @@ func WrapErrors(preferredCode codes.Code, statusMsg string, errs ...error) error
 	if len(errs) == 0 {
 		return st.Err()
 	}
-
-	allErrs := append([]error{st.Err()}, errs...)
-	return errors.Join(allErrs...)
+	return joinWithStatus(st, errs)
 }
 
 func WrapErrorsWithRateLimitInfo(preferredCode codes.Code, resp *http.Response, errs ...error) error {
@@ -272,9 +664,84 @@ func WrapErrorsWithRateLimitInfo(preferredCode codes.Code, resp *http.Response, 
 	if len(errs) == 0 {
 		return st.Err()
 	}
+	return joinWithStatus(st, errs)
+}
 
-	allErrs := append([]error{st.Err()}, errs...)
-	return errors.Join(allErrs...)
+// joinWithStatus joins errs under st. st is left off only when the first
+// status in the chain already states it: status.Code reads that one. A later
+// match does not count, or an earlier status of another code would win. A
+// non-2xx Do error passed back through WrapErrors would otherwise print its
+// status line twice.
+func joinWithStatus(st *status.Status, errs []error) error {
+	joined := errors.Join(errs...)
+	if statusStates(st, joined) {
+		return joined
+	}
+	return errors.Join(append([]error{st.Err()}, errs...)...)
+}
+
+// statusStates reports whether the status status.Code would read from err
+// already has st's code, message, and details.
+func statusStates(st *status.Status, err error) bool {
+	var carrier interface{ GRPCStatus() *status.Status }
+	if !errors.As(err, &carrier) {
+		return false
+	}
+	carried := carrier.GRPCStatus()
+	return carried.Code() == st.Code() && carried.Message() == st.Message() &&
+		detailsCover(carried.Details(), st.Details())
+}
+
+// detailsCover reports whether every detail in want is already in have.
+func detailsCover(have, want []any) bool {
+	for _, detail := range want {
+		wantMsg, ok := detail.(proto.Message)
+		if !ok || !hasDetail(have, wantMsg) {
+			return false
+		}
+	}
+	return true
+}
+
+func hasDetail(have []any, want proto.Message) bool {
+	for _, detail := range have {
+		got, ok := detail.(proto.Message)
+		if ok && detailMatches(got, want) {
+			return true
+		}
+	}
+	return false
+}
+
+// detailMatches compares details. A rate-limit detail matches on status,
+// limit, and remaining. ResetAt is time.Now plus a relative header, so two
+// reads of the same header are not proto.Equal.
+func detailMatches(got, want proto.Message) bool {
+	gotRL, gotOK := got.(*v2.RateLimitDescription)
+	wantRL, wantOK := want.(*v2.RateLimitDescription)
+	if gotOK || wantOK {
+		return gotOK && wantOK &&
+			gotRL.GetStatus() == wantRL.GetStatus() &&
+			gotRL.GetLimit() == wantRL.GetLimit() &&
+			gotRL.GetRemaining() == wantRL.GetRemaining()
+	}
+	return proto.Equal(got, want)
+}
+
+func (c *BaseHttpClient) recordCacheHit(ctx context.Context) {
+	if c.metricsHandler == nil {
+		return
+	}
+	counter := c.metricsHandler.Int64Counter(httpCacheHitCounterName, httpCacheHitCounterDesc, metrics.Dimensionless)
+	counter.Add(ctx, 1, nil)
+}
+
+func (c *BaseHttpClient) recordCacheMiss(ctx context.Context) {
+	if c.metricsHandler == nil {
+		return
+	}
+	counter := c.metricsHandler.Int64Counter(httpCacheMissCounterName, httpCacheMissCounterDesc, metrics.Dimensionless)
+	counter.Add(ctx, 1, nil)
 }
 
 func (c *BaseHttpClient) Do(req *http.Request, options ...DoOption) (*http.Response, error) {
@@ -289,34 +756,24 @@ func (c *BaseHttpClient) Do(req *http.Request, options ...DoOption) (*http.Respo
 		c.rateLimiter.Take()
 	}
 
-	if req.Method == http.MethodGet {
-		resp, err = c.baseHttpCache.Get(req)
+	if req.Method == http.MethodGet && req.Header.Get("Cache-Control") != "no-cache" {
+		resp, err = c.baseHttpCache.Get(req, c.cacheOptions...)
 		if err != nil {
 			return nil, err
 		}
 		if resp == nil {
-			l.Debug("http cache miss", zap.String("url", req.URL.String()))
+			c.recordCacheMiss(req.Context())
 		} else {
-			l.Debug("http cache hit", zap.String("url", req.URL.String()))
+			c.recordCacheHit(req.Context())
 		}
 	}
 
 	if resp == nil {
-		resp, err = c.HttpClient.Do(req)
+		resp, err = c.HttpClient.Do(req) // #nosec G704 -- this HTTP wrapper intentionally supports arbitrary connector-defined endpoints.
 		if err != nil {
-			var urlErr *url.Error
-			if errors.As(err, &urlErr) {
-				if urlErr.Timeout() {
-					return nil, WrapErrors(codes.DeadlineExceeded, fmt.Sprintf("request timeout: %v", urlErr.URL), urlErr)
-				}
-				if urlErr.Temporary() {
-					return nil, WrapErrors(codes.Unavailable, fmt.Sprintf("temporary error: %v", urlErr.URL), urlErr)
-				}
-			}
-			if errors.Is(err, context.DeadlineExceeded) {
-				return nil, status.Error(codes.DeadlineExceeded, "request timeout")
-			}
-			return nil, err
+			err = wrapRequestError(err)
+			l.Error("base-http-client: HTTP error response", append(requestLogFields(req), zap.Error(err))...)
+			return resp, err
 		}
 	}
 
@@ -326,14 +783,7 @@ func (c *BaseHttpClient) Do(req *http.Request, options ...DoOption) (*http.Respo
 		if len(body) > 0 {
 			resp.Body = io.NopCloser(bytes.NewBuffer(body))
 		}
-		// Turn certain body read errors into grpc statuses so we retry
-		if errors.Is(err, io.ErrUnexpectedEOF) {
-			return resp, WrapErrors(codes.Unavailable, "unexpected EOF", err)
-		}
-		if errors.Is(err, syscall.ECONNRESET) {
-			return resp, WrapErrors(codes.Unavailable, "connection reset", err)
-		}
-		return resp, err
+		return resp, wrapRequestError(err)
 	}
 
 	// Replace resp.Body with a no-op closer so nobody has to worry about closing the reader.
@@ -359,39 +809,68 @@ func (c *BaseHttpClient) Do(req *http.Request, options ...DoOption) (*http.Respo
 		}
 	}
 
-	switch resp.StatusCode {
-	case http.StatusRequestTimeout:
-		return resp, WrapErrorsWithRateLimitInfo(codes.DeadlineExceeded, resp, optErrs...)
-	case http.StatusTooManyRequests, http.StatusBadGateway, http.StatusServiceUnavailable:
-		return resp, WrapErrorsWithRateLimitInfo(codes.Unavailable, resp, optErrs...)
-	case http.StatusNotFound:
-		return resp, WrapErrorsWithRateLimitInfo(codes.NotFound, resp, optErrs...)
-	case http.StatusUnauthorized:
-		return resp, WrapErrorsWithRateLimitInfo(codes.Unauthenticated, resp, optErrs...)
-	case http.StatusForbidden:
-		return resp, WrapErrorsWithRateLimitInfo(codes.PermissionDenied, resp, optErrs...)
-	case http.StatusConflict:
-		return resp, WrapErrorsWithRateLimitInfo(codes.AlreadyExists, resp, optErrs...)
-	case http.StatusNotImplemented:
-		return resp, WrapErrorsWithRateLimitInfo(codes.Unimplemented, resp, optErrs...)
+	// Log response headers directly for certain errors
+	if resp.StatusCode >= 400 {
+		redactedHeaders := RedactSensitiveHeaders(resp.Header)
+		logFields := append(requestLogFields(req),
+			zap.Int("status_code", resp.StatusCode),
+			zap.String("status", resp.Status),
+			zap.Any("headers", redactedHeaders),
+		)
+		if resp.StatusCode >= 500 {
+			l.Error("base-http-client: HTTP error status", logFields...)
+		} else {
+			l.Warn("base-http-client: HTTP error status", logFields...)
+		}
 	}
 
-	if resp.StatusCode >= 500 && resp.StatusCode <= 599 {
-		return resp, WrapErrorsWithRateLimitInfo(codes.Unavailable, resp, optErrs...)
-	}
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return resp, WrapErrorsWithRateLimitInfo(codes.Unknown, resp, append(optErrs, fmt.Errorf("unexpected status code: %d", resp.StatusCode))...)
+	if !isSuccessStatusCode(resp.StatusCode) {
+		grpcCode := GrpcCodeFromHTTPStatus(resp.StatusCode)
+		return resp, WrapErrorsWithRateLimitInfo(grpcCode, resp, withoutDecodeErrors(optErrs)...)
 	}
 
 	if req.Method == http.MethodGet && resp.StatusCode == http.StatusOK {
-		cacheErr := c.baseHttpCache.Set(req, resp)
+		cacheErr := c.baseHttpCache.Set(req, resp, c.cacheOptions...)
 		if cacheErr != nil {
-			l.Warn("error setting cache", zap.String("url", req.URL.String()), zap.Error(cacheErr))
+			l.Warn("error setting cache", append(requestLogFields(req), zap.Error(cacheErr))...)
 		}
 	}
 
 	return resp, errors.Join(optErrs...)
+}
+
+var sensitiveStrings = []string{
+	"api-key",
+	"auth",
+	"cookie",
+	"proxy-authorization",
+	"set-cookie",
+	"x-forwarded-for",
+	"x-forwarded-proto",
+}
+
+func RedactSensitiveHeaders(h http.Header) http.Header {
+	if h == nil {
+		return nil
+	}
+	safe := make(http.Header, len(h))
+	for k, v := range h {
+		sensitive := false
+		headerKey := strings.ToLower(k)
+		for _, sensitiveString := range sensitiveStrings {
+			if strings.Contains(headerKey, sensitiveString) {
+				sensitive = true
+				break
+			}
+		}
+
+		if sensitive {
+			safe[k] = []string{"REDACTED"}
+		} else {
+			safe[k] = v
+		}
+	}
+	return safe
 }
 
 func WithHeader(key, value string) RequestOption {
@@ -402,13 +881,21 @@ func WithHeader(key, value string) RequestOption {
 	}
 }
 
+func WithNoCache() RequestOption {
+	return func() (io.ReadWriter, map[string]string, error) {
+		return nil, map[string]string{
+			"Cache-Control": "no-cache",
+		}, nil
+	}
+}
+
 func WithBody(body []byte) RequestOption {
 	return func() (io.ReadWriter, map[string]string, error) {
 		return bytes.NewBuffer(body), nil, nil
 	}
 }
 
-func WithJSONBody(body interface{}) RequestOption {
+func WithJSONBody(body any) RequestOption {
 	return func() (io.ReadWriter, map[string]string, error) {
 		buffer := new(bytes.Buffer)
 		err := json.NewEncoder(buffer).Encode(body)
@@ -442,7 +929,7 @@ func WithFormBody(body string) RequestOption {
 	}
 }
 
-func WithXMLBody(body interface{}) RequestOption {
+func WithXMLBody(body any) RequestOption {
 	return func() (io.ReadWriter, map[string]string, error) {
 		var buffer bytes.Buffer
 
@@ -502,7 +989,7 @@ func WithBearerToken(token string) RequestOption {
 
 func (c *BaseHttpClient) NewRequest(ctx context.Context, method string, url *url.URL, options ...RequestOption) (*http.Request, error) {
 	var buffer io.ReadWriter
-	var headers map[string]string = make(map[string]string)
+	var headers = make(map[string]string)
 	for _, option := range options {
 		buf, h, err := option()
 		if err != nil {
