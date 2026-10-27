@@ -3,7 +3,7 @@ module github.com/conductorone/baton-sql-server
 go 1.27.3
 
 require (
-	github.com/conductorone/baton-sdk v0.42.4
+	github.com/conductorone/baton-sdk v0.42.5
 	github.com/ennyjfrick/ruleguard-logfatal v0.0.2
 	github.com/grpc-ecosystem/go-grpc-middleware v1.4.0
 	github.com/jmoiron/sqlx v1.3.5
